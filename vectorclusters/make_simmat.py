@@ -76,9 +76,6 @@ def main(nlp_name,size):
                 computel = [j>i for i,j in product(range(size),range(size))]
                 total = i-1
             size_to_get = size - len(vocab_tokens)
-        if i < 7:
-            i += 1
-            continue
 
         to_bd = ((comp,vs[0],vs[1]) for comp,vs in zip(computel,product(vocab_tokens,vocab_tokens)))
         vl = map(sims,to_bd)
