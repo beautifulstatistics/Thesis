@@ -12,12 +12,6 @@ import spacy
 
 import logging
 logging.basicConfig(filename='make_simmat.log', encoding='utf-8', level=logging.INFO)
-
-def make_whole(df):
-    df = df.fillna(0) + df.fillna(0).T
-    for i in range(df.shape[0]):
-        df.iloc[i,i] = 1
-    return(df)
     
 def peek(gen):
     try:
@@ -48,7 +42,6 @@ def make_shuffle(nlp_name,strings):
         vocab_len = vocab_list.shape[0]
         index = np.random.choice(vocab_len, vocab_len, replace=False)
         shuffled_vocab = shuffle_slice(vocab_list, index).compute().astype(object)
-        pd.Series(shuffled_vocab).to_csv('shuffleddict.csv',index=False)
     
     return shuffled_vocab, len(shuffled_vocab)
 
@@ -88,7 +81,7 @@ def main(nlp_name,size):
         pdf.to_parquet(f'./{nlp_name}/data/sim{i}.parquet',index=True)
 
         logging.info('Sleeping')
-        time.sleep(60)
+        time.sleep(2*60)
         
         logging.info(f"Finshed Batch: {i}; took {(time.time()-t2)/60} mins")
         logging.info(f"Estimated time remaining: {(time.time()-t1)/60/60/(i+1)*(total-i+1)} hours")
@@ -101,4 +94,4 @@ if __name__ == '__main__':
     size = 30000
     t1 = time.time()
     main(nlp_name,size)
-    print('Took',(time.time()-t1)/60/60,'hours')
+    logging.info('Took',(time.time()-t1)/60/60,'hours')
