@@ -1,0 +1,42 @@
+import os
+import time
+
+import numpy as np
+import pandas as pd
+
+import dask.array as da
+from dask.array.slicing import shuffle_slice
+
+import spacy
+
+import logging
+logging.basicConfig(filename='make_vectors.log', encoding='utf-8', level=logging.INFO)
+
+
+def make_shuffle(strings):
+    vocab_list = da.from_array(np.array(strings))
+    vocab_len = vocab_list.shape[0]
+    index = np.random.choice(vocab_len, vocab_len, replace=False)
+    shuffled_vocab = shuffle_slice(vocab_list, index).compute().astype(object)
+    return shuffled_vocab
+
+def vocab_gen(nlp_name):
+    nlp = spacy.load(nlp_name)
+    for token in make_shuffle(nlp.vocab.strings):
+        nlpt = nlp(token)
+        if nlpt.has_vector:
+            yield nlpt.text, nlpt.vector
+
+def main(nlp_name):
+    if not os.path.exists(f'./{nlp_name}/vectors/data'):
+        os.makedirs(f'./{nlp_name}/vectors/data')
+
+    pdf = pd.DataFrame(vocab_gen(nlp_name),columns=['name','vector'])
+    pdf.to_parquet(f'./{nlp_name}/vectors/data/vectors.parquet',index=False)
+
+
+if __name__ == '__main__':
+    nlp_name = 'en_core_web_lg'
+    t1 = time.time()
+    main(nlp_name)
+    logging.info(f'Took {(time.time()-t1)/60/60} hours')

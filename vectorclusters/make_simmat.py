@@ -12,7 +12,7 @@ import spacy
 
 import logging
 logging.basicConfig(filename='make_simmat.log', encoding='utf-8', level=logging.INFO)
-    
+
 def peek(gen):
     try:
         first = next(gen)
