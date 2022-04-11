@@ -28,12 +28,13 @@ def vocab_gen(nlp_name):
             yield nlpt.text, nlpt.vector
 
 def main(nlp_name):
-    if not os.path.exists(f'./{nlp_name}/vectors/data'):
-        os.makedirs(f'./{nlp_name}/vectors/data')
+    if not os.path.exists(f'./{nlp_name}_vectors/data'):
+        os.makedirs(f'./{nlp_name}_vectors/data')
 
-    pdf = pd.DataFrame(vocab_gen(nlp_name),columns=['name','vector'])
-    pdf.to_parquet(f'./{nlp_name}/vectors/data/vectors.parquet',index=False)
-
+    index, vals = zip(*vocab_gen(nlp_name))
+    pdf = pd.DataFrame(vals)
+    pdf.index = index
+    pdf.to_parquet(f'./{nlp_name}_vectors/data/vectors.parquet',index=True)
 
 if __name__ == '__main__':
     nlp_name = 'en_core_web_lg'
