@@ -33,6 +33,7 @@ def main(nlp_name):
 
     index, vals = zip(*vocab_gen(nlp_name))
     pdf = pd.DataFrame(vals)
+    pdf.columns = pdf.columns.astype(str)
     pdf.index = index
     pdf.to_parquet(f'./{nlp_name}_vectors/data/vectors.parquet',index=True)
 
