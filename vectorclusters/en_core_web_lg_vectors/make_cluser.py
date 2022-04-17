@@ -1,32 +1,28 @@
-import dask.dataframe as dd
-from dask_ml.cluster import SpectralClustering
-from sklearn.metrics.pairwise import pairwise_kernels
+from sklearn.metrics import pairwise_distances_chunked
 import time
 import os
 import logging
 import numpy as np
 import pandas as pd
-from itertools import product
+import zarr
 
 logging.basicConfig(filename='make_cluster.log',level=logging.INFO)
 
-if not os.path.exists('./cluster/data'):
-    os.makedirs('./cluster/data')
+if not os.path.exists('./cosine_distance/data'):
+    os.makedirs('./cosine_distance/data')
 
-df = dd.read_parquet('./data/vectors.parquet')
+df = pd.read_parquet('./data/vectors.parquet')
+st = zarr.open_array('./cosine_distance/data/cosine.zarr', mode='a', 
+                    shape=(0,df.shape[0]),chunks=None, fill_value=0,
+                    dtype=np.uint16)
 
-def cosine_kernel(X,y=None,gamma=None,degree=None,coef0=None):
-    kerns = pairwise_kernels(X,y,metric='cosine')
-    return np.exp(np.absolute(kerns))
+t1 = time.time()
+for i, chunk in enumerate(pairwise_distances_chunked(df,metric='cosine',n_jobs=-1,working_memory=16*1024)):
+    chunk = np.round(chunk/2*65535).astype(np.uint16)
+    st.append(chunk,axis=0)
+    if i > 2: break
+t2 = (time.time()-t1)/60
 
-times = []
-for n_components, frac in product([50,100,200],[.002,.003,.004]):
-    t1 = time.time()
-    sc = SpectralClustering(persist_embedding=True,n_jobs=-1,affinity=cosine_kernel,n_components=n_components)
-    labs = sc.fit_predict(df.sample(frac=frac).to_dask_array(lengths=True))
-    k = (n_components,frac,(time.time()-t1)/60,len(np.unique(labs.compute())))
-    times.append(k)
-    print(k)
-
-pd.DataFrame(times).to_csv('times.csv')
-
+# rr = st.shape[1]/st.shape[0]
+# print(rr*(t2/(i+1))/60)
+# print(rr*8)

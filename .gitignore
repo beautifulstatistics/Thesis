@@ -8,3 +8,5 @@ test*.py
 *.csv
 *.zip
 *.ipynb
+*.npy
+*.tar.xz
