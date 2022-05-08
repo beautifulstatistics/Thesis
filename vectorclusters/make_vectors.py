@@ -6,6 +6,7 @@ import pandas as pd
 
 import dask.array as da
 from dask.array.slicing import shuffle_slice
+from sklearn.preprocessing import Normalizer
 
 import spacy
 
@@ -35,6 +36,8 @@ def main(nlp_name):
     pdf = pd.DataFrame(vals)
     pdf.columns = pdf.columns.astype(str)
     pdf.index = index
+
+    pdf = Normalizer().fit_transform(pdf)
     pdf.to_parquet(f'./{nlp_name}_vectors/data/vectors.parquet',index=True)
 
 if __name__ == '__main__':
