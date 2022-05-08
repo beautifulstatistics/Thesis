@@ -1,5 +1,3 @@
-from lib2to3.pgen2.token import OP
-from pyparsing import Opt
 from sklearn.cluster import Birch, OPTICS
 from sklearn.preprocessing import Normalizer
 import pandas as pd
