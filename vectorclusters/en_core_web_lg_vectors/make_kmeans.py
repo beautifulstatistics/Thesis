@@ -5,7 +5,7 @@ import zarr
 
 X = dd.read_parquet('./data/vectors.parquet')
 
-k_samples = np.random.randint(low=2,high=10000,size=1000)
+k_samples = np.random.randint(low=2,high=5000,size=1000)
 
 k_ineritas = zarr.open_array('./kmeans/data/k_ineritas.zarr', mode='w', 
                     shape=(1000,2),chunks=None, fill_value=0,
