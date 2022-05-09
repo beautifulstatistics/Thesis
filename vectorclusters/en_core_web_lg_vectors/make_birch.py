@@ -6,7 +6,7 @@ import time
 import logging
 import os
 
-logging.basicConfig(filename='make_birch.log',level=logging.INFO)
+logging.basicConfig(filename='make_birch.log',level=logging.INFO,filemode='w')
 logging.info(f"PID: {os.getpid()}")
 logging.info(f"Fitting Started {time.strftime('%m-%d-%H', time.localtime())}")
 
@@ -26,6 +26,8 @@ clust_pred = bir.predict(X)
 t3 = time.time()
 logging.info(f"Real Hours to predict: {(t2-t3)/60/60}")
 logging.info(f"Cluster count: {len(set(clust_pred))}")
+
+os.makedirs('./birch/data/clusters.parquet',exist_ok=True)
 
 pd.DataFrame(clust_pred,columns=['cluster']).to_parquet('./birch/data/clusters.parquet')
 logging.info("Complete")
