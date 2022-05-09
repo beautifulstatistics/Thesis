@@ -29,8 +29,7 @@ def vocab_gen(nlp_name):
             yield nlpt.text, nlpt.vector
 
 def main(nlp_name):
-    if not os.path.exists(f'./{nlp_name}_vectors/data'):
-        os.makedirs(f'./{nlp_name}_vectors/data')
+    os.makedirs(f'./{nlp_name}_vectors/data',exist_ok=True)
 
     index, vals = zip(*vocab_gen(nlp_name))
     pdf = pd.DataFrame(vals)

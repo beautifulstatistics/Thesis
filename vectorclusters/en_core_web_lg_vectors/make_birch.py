@@ -10,7 +10,7 @@ logging.basicConfig(filename='make_birch.log',level=logging.INFO,filemode='w')
 logging.info(f"PID: {os.getpid()}")
 logging.info(f"Fitting Started {time.strftime('%m-%d-%H', time.localtime())}")
 
-X = pd.read_parquet('./data/vectors.parquet')
+X = pd.read_parquet('./data/vectors.parquet').sample(n=10000)
 X = Normalizer().fit_transform(X=X)
 logging.info("Vectors Normalized")
 
