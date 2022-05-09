@@ -25,18 +25,19 @@ def vocab_gen(nlp_name):
     nlp = spacy.load(nlp_name)
     for token in make_shuffle(nlp.vocab.strings):
         nlpt = nlp(token)
-        if nlpt.has_vector:
-            yield nlpt.text, nlpt.vector
+        if not nlpt.has_vector or nlpt.vector_norm <= 0:
+            continue
+        yield nlpt.text, nlpt.vector
 
 def main(nlp_name):
     os.makedirs(f'./{nlp_name}_vectors/data',exist_ok=True)
 
     index, vals = zip(*vocab_gen(nlp_name))
+    vals = Normalizer().fit_transform(vals)
     pdf = pd.DataFrame(vals)
     pdf.columns = pdf.columns.astype(str)
     pdf.index = index
 
-    pdf = Normalizer().fit_transform(pdf)
     pdf.to_parquet(f'./{nlp_name}_vectors/data/vectors.parquet',index=True)
 
 if __name__ == '__main__':
