@@ -4,6 +4,7 @@ import numpy as np
 import zarr
 
 import logging
+import time
 
 logging.basicConfig(filename='make_kmeans.log',filemode='w',level=logging.INFO,
                     format="%(process)s-%(asctime)s-%(message)s")
@@ -18,6 +19,12 @@ k_ineritas = zarr.open_array('./kmeans/data/k_ineritas.zarr', mode='w',
                     dtype=float)
 
 for index, k in enumerate(k_samples):
+    t1 = time.time()
     km = KMeans(n_clusters=k,n_jobs=-1)
     X = km.fit_transform(X)
     k_ineritas[index,:] = (k,X.inertia_)
+
+    t2 = time.time()
+    logging.info(f"index: {index} finished. Hours: {(t2-t1)/60/60}")
+
+logging.info(f"Complete")
