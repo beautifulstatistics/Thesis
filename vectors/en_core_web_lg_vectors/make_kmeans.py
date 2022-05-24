@@ -15,7 +15,7 @@ n_samples = 200
 k_samples = []
 
 while len(k_samples) < n_samples:
-    candidate = np.random.randint(low=2,high=2000,size=1)
+    candidate = np.random.randint(low=2,high=2000,size=1)[0]
     if candidate not in k_samples:
         k_samples.append(candidate)
 
