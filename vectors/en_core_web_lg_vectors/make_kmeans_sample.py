@@ -8,7 +8,7 @@ import zarr
 import logging
 import time
 
-logging.basicConfig(filename='./logs/make_kmeans6.log',filemode='a',level=logging.INFO,
+logging.basicConfig(filename='./logs/make_kmeans_sample.log',filemode='a',level=logging.INFO,
                     format="%(process)s-%(asctime)s-%(message)s")
 
 k_max = 1000
@@ -22,7 +22,7 @@ while len(clusters) < k_sam:
     if randi not in clusters:
         clusters.append(randi)
 
-k_inertias_sam = zarr.open_array('./kmeans/data/k_inertias_sam.zarr', mode='w',
+k_inertias_sample = zarr.open_array('./kmeans/data/k_inertias_sample.zarr', mode='w',
                     shape=(len(clusters),3),chunks=None, fill_value=0,
                     dtype=float)
 
@@ -35,7 +35,7 @@ for index, k in enumerate(clusters):
     km.fit(X)
 
     sil_score = silhouette_score(X=X,labels=km.labels_)
-    k_inertias_sam[index,:] = (k,km.inertia_,sil_score)
+    k_inertias_sample[index,:] = (k,km.inertia_,sil_score)
 
     t2 = time.time()
     print(f"Index: {index} finished, Clusters: {k}, Hours: {round((t2-t1)/60/60,2)}, " \
