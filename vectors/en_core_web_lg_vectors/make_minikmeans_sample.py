@@ -1,24 +1,20 @@
-from dask_ml.cluster import KMeans
+from sklearn.cluster import MiniBatchKMeans
 from sklearn.metrics import silhouette_score
-from dask_ml.decomposition import PCA
 
-import dask.dataframe as dd
+import pandas as pd
 import random
 import zarr
 
 import logging
 import time
 
-logging.basicConfig(filename='./logs/make_kmeans_sample.log',filemode='a',level=logging.INFO,
+logging.basicConfig(filename='./logs/make_minikmeans_sample.log',filemode='a',level=logging.INFO,
                     format="%(process)s-%(asctime)s-%(message)s")
 
 k_max = 1000
 k_sam = 150
 
-X = dd.read_parquet('./data/vectors.parquet').to_dask_array(lengths=True)
-X = PCA(n_components=1,svd_solver='full').fit_transform(X)
-
-print('PCA Transformation Complete')
+X = pd.read_parquet('./data/vectors.parquet')
 
 clusters = [1]
 while len(clusters) < k_sam:
@@ -36,9 +32,9 @@ for index, k in enumerate(clusters):
     t1 = time.time()
     
     if k <= 1:
-        km = KMeans(n_clusters=1)
+        km = MiniBatchKMeans(n_clusters=1)
     else:
-        km = KMeans(n_clusters=k,n_jobs=-1)
+        km = MiniBatchKMeans(n_clusters=k,batch_size=256*16)
     
     km.fit(X)
 
