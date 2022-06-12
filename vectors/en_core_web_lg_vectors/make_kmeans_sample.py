@@ -1,32 +1,28 @@
 from dask_ml.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from dask_ml.decomposition import PCA
 
-import dask.dataframe as dd
+import pandas as pd
 import random
 import zarr
 
-import logging
 import time
+import logging
 
-logging.basicConfig(filename='./logs/make_kmeans_sample.log',filemode='a',level=logging.INFO,
+logging.basicConfig(filename='./logs/make_minikmeans_sample.log',filemode='a',level=logging.INFO,
                     format="%(process)s-%(asctime)s-%(message)s")
 
 k_max = 1000
-k_sam = 150
+k_sam = 25
 
-X = dd.read_parquet('./data/vectors.parquet').to_dask_array(lengths=True)
-X = PCA(n_components=1,svd_solver='full').fit_transform(X)
+X = pd.read_parquet('./data/vectors.parquet')
 
-print('PCA Transformation Complete')
-
-clusters = [1]
+clusters = [1000]
 while len(clusters) < k_sam:
     randi = random.randint(a=2,b=k_max)
     if randi not in clusters:
         clusters.append(randi)
 
-k_inertias_sample = zarr.open_array('./kmeans/data/k_inertias_sample.zarr', mode='w',
+k_inertias_sample = zarr.open_array('./kmeans/data/k_inertias_sample2.zarr', mode='w',
                     shape=(len(clusters),3),chunks=None, fill_value=0,
                     dtype=float)
 
