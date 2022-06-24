@@ -1,3 +1,4 @@
+import os
 from dask_ml.cluster import KMeans
 import pandas as pd
 import zarr
@@ -5,15 +6,22 @@ import time
 
 X = pd.read_parquet('./data/vectors.parquet')
 
-clusters = list(range(2000,3000,50))
+clusters = list(range(45000,52500,500))
 
-k_inertias_sample = zarr.open_array('./kmeans/data/k_inertias_2000_3000.zarr', mode='w',
+path = './kmeans/data/k_inertias_45000_52500.zarr'
+if not os.path.exists(path):
+    k_inertias_sample = zarr.open_array(path, mode='w',
                     shape=(len(clusters),2),chunks=None, fill_value=0,
                     dtype=float)
+else:
+    k_inertias_sample = zarr.open_array(path, mode='a')
 
 print('Start',flush=True)
 t_start = time.time()
 for index, k in enumerate(clusters):
+    if k_inertias_sample[index][1] != 0:
+        continue
+
     t1 = time.time()
     
     if k <= 1:
