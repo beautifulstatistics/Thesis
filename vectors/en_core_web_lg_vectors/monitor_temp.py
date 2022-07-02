@@ -14,6 +14,8 @@ def main(script,log):
         sys.stdout = loghanndle
         sys.stderr = loghanndle
 
+        print(f"PID {pid}")
+
         while True:
             temp_second = []
             for _ in range(10):
@@ -35,7 +37,7 @@ def main(script,log):
                     if temp_average > 82:
                         print(f"Suspending {pid}")
                         p.suspend()
-                        time.sleep(10)
+                        time.sleep(60)
                         pause = True
                 else:
                     if temp_average <= 82:
