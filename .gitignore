@@ -1,9 +1,12 @@
 .ipynb_checkpoints/
 __pycache__/
 data/
+log/
+logs/
 test*.py
 *.log
 *.out
+*.out[0-9]*
 *.parquet
 *.csv
 *.zip

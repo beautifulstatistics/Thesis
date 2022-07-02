@@ -6,9 +6,9 @@ import time
 
 X = pd.read_parquet('./data/vectors.parquet')
 
-clusters = list(range(15000,20000,1000))
+clusters = list(range(3000,10000,1000))
 
-path = './kmeans/data/k_inertias_15000_20000.zarr'
+path = './kmeans/data/k_inertias_3000_10000.zarr'
 if not os.path.exists(path):
     k_inertias_sample = zarr.open_array(path, mode='w',
                     shape=(len(clusters),2),chunks=None, fill_value=0,
