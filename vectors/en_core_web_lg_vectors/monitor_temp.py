@@ -1,13 +1,15 @@
 import subprocess
 import re
+import os
 import time
 import sys
 import psutil
 
-def main(script,log):
+def main(script):
+    log = os.path.join('logs',script.rsplit(".")[:-1] + ['.log'])
     pause = False
     with open(log,"w+",buffering=1) as loghanndle:
-        proc = subprocess.Popen(["python",script],stderr=subprocess.STDOUT,stdout=loghanndle)
+        proc = subprocess.Popen(["python",script],stderr=subprocess.STDOUT,stdout=loghanndle).communicate()
         pid = proc.pid
         p = psutil.Process(pid)
 
@@ -17,6 +19,10 @@ def main(script,log):
         print(f"PID {pid}")
 
         while True:
+            if psutil.cpu_percent(5) < 95:
+                time.sleep(60)
+                continue
+
             temp_second = []
             for _ in range(10):
                 sens = subprocess.run("sensors",capture_output=True)
@@ -48,4 +54,4 @@ def main(script,log):
                 return
 
 if __name__ == "__main__":
-    main(script=sys.argv[1], log=sys.argv[2])
+    main(script=sys.argv[1])
