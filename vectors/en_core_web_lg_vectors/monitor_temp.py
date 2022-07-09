@@ -18,7 +18,6 @@ def main(script):
 
         proc = subprocess.Popen(["python",script],stderr=subprocess.STDOUT,stdout=loghanndle)
         pid = proc.pid
-        p = psutil.Process(pid)
 
         print(f"PID {pid}")
         print(timeof())
@@ -28,9 +27,6 @@ def main(script):
                 print(timeof())
                 time.sleep(60)
                 continue
-
-            print(f"Suspending {pid}")
-            print(timeof())
 
             temp_second = []
             for _ in range(10):
@@ -52,14 +48,14 @@ def main(script):
                     if temp_average > 82:
                         print(f"Suspending {pid}")
                         print(timeof())
-                        p.suspend()
+                        os.system(f"kill -STOP {pid}")
                         time.sleep(60)
                         pause = True
                 else:
                     if temp_average <= 82:
                         print(f"Resuming {pid}")
                         print(timeof())
-                        p.resume()
+                        os.system(f"kill -CONT {pid}")
                         pause = False
             else:
                 return

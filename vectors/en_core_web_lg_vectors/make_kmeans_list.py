@@ -1,5 +1,5 @@
 import os
-from dask_ml.cluster import KMeans
+from sklearn.cluster import KMeans
 import pandas as pd
 import zarr
 import time
