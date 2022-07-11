@@ -1,10 +1,10 @@
 from multiprocessing import Pool
-from dask_ml.cluster import KMeans
+from sklearn.cluster import KMeans
 import pandas as pd
 import time
 import zarr
 
-clusters = list(range(1,10))
+clusters = [1]
 
 X = pd.read_parquet('./data/vectors.parquet')
 
@@ -15,15 +15,19 @@ k_inertias = zarr.open_array(path, mode='w',
 
 def kmeans_k(k):
     t1 = time.time()
-    km = KMeans(n_clusters=k,n_jobs=1)
+    km = KMeans(n_clusters=k)
     km.fit(X)
-    return (k,km.inertia_,(time.time()-t1)/60)
+    t2 = (time.time()-t1)/60
+    return (k,km.inertia_,t2)
+
 
 if __name__ == "__main__":
+    print(time.strftime('%H:%M', time.localtime()))
     t1 = time.time()
-    with Pool(15) as pool:
+    with Pool(16) as pool:
         a = pool.imap(kmeans_k, clusters)
         for index, value in enumerate(a):
             k_inertias[index] = value
+            print(value)
 
-    print((time.time()-t1)/60)
+    print("Total Days:",(time.time()-t1)/60/60/24)

@@ -23,14 +23,11 @@ for index, k in enumerate(clusters):
     if k_inertias_sample[index][1] != 0:
         continue
 
-    t1 = time.time()
+    t1 = time.time()        
     
-    if k <= 1:
-        km = KMeans(n_clusters=1)
-    else:
-        km = KMeans(n_clusters=k,n_jobs=-1)
-    
+    km = KMeans(n_clusters=k)
     km.fit(X)
+    
     k_inertias_sample[index,:] = (k,km.inertia_)
 
     t2 = time.time()
