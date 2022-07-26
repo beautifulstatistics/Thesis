@@ -1,8 +1,8 @@
 .ipynb_checkpoints/
 __pycache__/
-data/
 log/
 logs/
+data/
 test*.py
 *.log
 *.out
@@ -13,3 +13,5 @@ test*.py
 *.ipynb
 *.npy
 *.tar.xz
+*.zarr
+*.pkl
