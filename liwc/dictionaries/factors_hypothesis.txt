@@ -1,0 +1,69 @@
+	affect (Affect)
+		posemo (Positive Emotions)
+		negemo (Negative Emotions)
+			anx (Anx)
+			anger (Anger)
+			sad (Sad)
+			onegemo (Negative Emotions)
+		oaffect (Affect)
+	social (Social)
+		family (Family)
+		friend (Friends)
+		female (Female)
+		male (Male)
+		osocial (Social)
+	cogproc (Cognitive Processes)
+		insight (Insight)
+		cause (Causal)
+		discrep (Discrepancies)
+		tentat (Tentative)
+		certain (Certainty)
+		differ (Differentiation)
+		ocogproc (Cognitive Processes)
+	percept (Perceptual Processes)
+		see (See)
+		hear (Hear)
+		feel (Feel)
+		opercept (Perceptual Processes)
+	bio (Biological Processes)
+		body (Body)
+		health (Health)
+		sexual (Sexual)
+		ingest (Ingest)
+		obio (Biological Processes)
+	drives (Drives)
+		affiliation (Affiliation)
+		achieve (Achievement)
+		power (Power)
+		reward (Reward)
+		risk (Risk)
+		odrives (Drives)
+	relativ (Relativity)
+		motion (Motion)
+		space (Space)
+		time (Time)
+		orelativ (Relativity)
+	persconc (Personal Concerns)
+		work (Work)
+		leisure (Leisure)
+		home (Home)
+		money (Money)
+		relig (Religion)
+		death (Death)
+		opersconc (Personal Concerns)
+	totallen
+		tokencount
+		notdict
+
+
+#############################
+
+affect
+social
+cogproc
+percept
+bio
+drives
+relativ
+persconc
+totallen

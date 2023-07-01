@@ -1,17 +1,9 @@
+
+# .gitignore
+
 .ipynb_checkpoints/
 __pycache__/
 data/
 models/
-test*.py
-*.parquet
-*.csv
-*.zip
-*.ipynb
-*.npy
-*.tar.xz
-*.zarr
-*.pkl
-*.data
-*.part
-*.jpeg
-*.log
+logs/
+archived/

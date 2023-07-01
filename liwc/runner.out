@@ -1,0 +1,7 @@
+Temp monitor PID: 149900
+Mem monitor PID: 149901
+2_clean_segment.py Building prefix dict from the default dictionary ...
+Loading model from cache /tmp/jieba.cache
+Loading model cost 0.778 seconds.
+Prefix dict has been built successfully.
+Cores Over Temp: 3
