@@ -1,6 +1,5 @@
 # !/bin/bash
 
-
 if [ -z "$1" ]
 then
     echo "Please specify which files to run!"

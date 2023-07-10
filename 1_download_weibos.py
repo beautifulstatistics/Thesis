@@ -1,4 +1,5 @@
 import os
+import shutil
 import requests
 import zipfile
 from tqdm import tqdm
@@ -27,8 +28,8 @@ def download_raw():
 def extract_files():
     print(os.getcwd())
     raw_data_path = os.path.join('data','raw','raw_data.zip')
-    zip_path = os.path.join('data','zip')
-    weeks_path = os.path.join('data','weeks')
+    zip_path = os.path.join('data','zipped')
+    weeks_path = os.path.join('data','unzipped')
 
     os.makedirs(weeks_path,exist_ok=True)
     os.makedirs(zip_path,exist_ok=True)
@@ -40,7 +41,7 @@ def extract_files():
                 print(file)
 
     for i in range(1,53):
-        file = os.path.join('data','zip',f'week{i}.zip')
+        file = os.path.join('data','zipped',f'week{i}.zip')
         with zipfile.ZipFile(file, 'r') as archive:
             archive.extractall(weeks_path)
             print(file)
@@ -48,13 +49,17 @@ def extract_files():
     print('CSV Week Files Extracted')
 
 def clean_up():
-    raw_data_path = os.path.join('data','weeks')
+    raw_data_path = os.path.join('data','unzipped')
     for root, _, files in os.walk(raw_data_path, topdown=False):
         for name in files:
             if name.startswith('user') or name.startswith('README') or name.startswith('random'):
                 os.unlink(os.path.join(root, name))
-                print(f'Deleted {name}')
-
+                print(f'Deleted {name}.')
+                
+    path = os.path.join('data','zipped')
+    shutil.rmtree(path)
+    print('Deleted zipped folder.')
+    
 def main():
     download_raw()
     extract_files()

@@ -1,7 +1,13 @@
-Temp monitor PID: 149900
-Mem monitor PID: 149901
-2_clean_segment.py Building prefix dict from the default dictionary ...
-Loading model from cache /tmp/jieba.cache
-Loading model cost 0.778 seconds.
-Prefix dict has been built successfully.
-Cores Over Temp: 3
+nohup: ignoring input
+Temp monitor PID: 107876
+Mem monitor PID: 107877
+7_fit_highest_factors.R Loading required package: Matrix
+Loading required package: MASS
+Loading required package: biglm
+Loading required package: DBI
+Command terminated by signal 15
+1416.05user 35.80system 24:12.83elapsed 99%CPU (0avgtext+0avgdata 6450444maxresident)k
+9523680inputs+3560outputs (3major+40492733minor)pagefaults 0swaps
+Error. Aborting.
+Killing temp monitor.
+Killing mem monitor.
