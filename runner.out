@@ -1,15 +1,19 @@
 nohup: ignoring input
-Temp monitor PID: 201869
-Mem monitor PID: 201870
-7_make_presence_data.R Loading required package: Matrix
+Temp monitor PID: 150101
+Mem monitor PID: 150102
+6_make_presence_data.R Loading required package: Matrix
 Loading required package: MASS
 Loading required package: biglm
 Loading required package: DBI
-Error: near "(": syntax error
-Execution halted
-Command exited with non-zero status 1
-155.30user 76.20system 6:49.01elapsed 56%CPU (0avgtext+0avgdata 52414216maxresident)k
-360056240inputs+10434712outputs (1major+13579410minor)pagefaults 0swaps
-Error. Aborting.
+390.76user 127.12system 12:05.85elapsed 71%CPU (0avgtext+0avgdata 52368500maxresident)k
+412380432inputs+42437576outputs (1517207major+13625300minor)pagefaults 0swaps
+Finished
+7_aggragete.R Loading required package: Matrix
+Loading required package: MASS
+Loading required package: biglm
+Loading required package: DBI
+3989.03user 51.89system 1:13:39elapsed 91%CPU (0avgtext+0avgdata 23474484maxresident)k
+39712456inputs+70892112outputs (63major+8109833minor)pagefaults 0swaps
+Finished
 Killing temp monitor.
 Killing mem monitor.

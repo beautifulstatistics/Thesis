@@ -80,12 +80,12 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
   }
 }
 
-prep.formula <- function(response, predictors){
+prep.formula <- function(predictors){
   predictors <- paste0(predictors, collapse = "+")
   
-  response <- paste0(response,' ~ ')
-  response <- paste0(response, predictors)
-  return(formula(response))
+  form_response <- 'cbind(censored,not_censored) ~ '
+  form_response <- paste0(form_response, predictors)
+  return(formula(form_response))
 }
 
 shlm <- function(form, data){
@@ -163,4 +163,37 @@ bin.residuals <- function(predicted,actual,nbins=NULL){
   df <- data.frame(residuals=res_mean, predicted=pred_mean, start=cumsum(length_bin), ellipsex=pred_mean_sorted, ellipsey=ellipse)
   
   return(df)
+}
+
+aggregate_predictors <- function(predictors, name){
+  predictors <- paste0(predictors, collapse = ", ")
+  dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
+  query <- paste0("
+    CREATE TABLE ", name," AS 
+    SELECT ", predictors,", 
+           SUM(permission_denied) as censored,
+           COUNT(*) - SUM(permission_denied) as not_censored 
+    FROM presence
+    GROUP BY ", predictors)
+  
+  dbExecute(conn, query)
+  
+  cat('Table',name, 'made.\n')
+}
+
+aggregate_predictors_test <- function(predictors, nme){
+  dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
+  
+  predictors <- paste0(predictors, collapse = ", ")
+  query <- paste0("
+    CREATE TABLE ", name," AS 
+    SELECT ", predictors,", 
+           SUM(permission_denied) as censored,
+           COUNT(*) - SUM(permission_denied) as not_censored 
+    FROM presence
+    LIMIT 1")
+  
+  dbExecute(conn, query)
+  
+  print(paste0('Table ', name, ' made.'))
 }

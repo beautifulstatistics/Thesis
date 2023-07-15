@@ -14,7 +14,6 @@ def core(path):
         writer.writerow(['image', 'text_raw', 'text', 'permission_denied'])
         with open(path, newline='', errors='replace') as f:
             reader = csv.reader(f)
-            next(reader)
 
             malformed = 0
             while True:
