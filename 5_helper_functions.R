@@ -80,20 +80,20 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
   }
 }
 
-prep.formula <- function(predictors){
+make.formula <- function(predictors, response){
   predictors <- paste0(predictors, collapse = "+")
   
-  form_response <- 'cbind(censored,not_censored) ~ '
+  form_response <- paste0(response, ' ~ ')
   form_response <- paste0(form_response, predictors)
   return(formula(form_response))
 }
 
-shlm <- function(form, data){
+shlm <- function(form, data, family='binomial'){
   data(TRUE)
   da2 <- data(FALSE)
   
   form <<- formula(form)
-  lm1 <- speedlm(form, data=da2)
+  lm1 <- speedlm(form, data=da2, family = family)
   
   da2 <- data(FALSE)
   while(!is.null(da2)) {
@@ -104,6 +104,12 @@ shlm <- function(form, data){
   return(lm1)
 }
 
+ranrows <- function(predictors, response=NULL, table='presence', limit=1000){
+  preds <- c(predictors, response)
+  preds <- paste0(preds,collapse = ', ')
+  
+  dbGetQuery(conn, paste0("SELECT ", preds," FROM ",table," ORDER BY RANDOM() LIMIT ", limit))
+}
 
 vif_core <- function(response, predictors, table, limit){
   form <- prep.formula(response, predictors)
@@ -129,7 +135,7 @@ vif <- function(predictors, table, limit = NULL){
 }
 
 linear_predictors.shglm <- function(model, newdata){
-  form <- formula(model$tf)
+  form <- formula(model$terms)
   rowSums(model.matrix(form, newdata) %% coef(model))
 }
 
@@ -179,21 +185,4 @@ aggregate_predictors <- function(predictors, name){
   dbExecute(conn, query)
   
   cat('Table',name, 'made.\n')
-}
-
-aggregate_predictors_test <- function(predictors, nme){
-  dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
-  
-  predictors <- paste0(predictors, collapse = ", ")
-  query <- paste0("
-    CREATE TABLE ", name," AS 
-    SELECT ", predictors,", 
-           SUM(permission_denied) as censored,
-           COUNT(*) - SUM(permission_denied) as not_censored 
-    FROM presence
-    LIMIT 1")
-  
-  dbExecute(conn, query)
-  
-  print(paste0('Table ', name, ' made.'))
 }

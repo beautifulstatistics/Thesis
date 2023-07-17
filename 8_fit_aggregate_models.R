@@ -1,6 +1,5 @@
-setwd("~/Desktop/working/Thesis")
-source("5_functions.R")
-library(speedglm)
+setwd("~/Desktop/working8/Thesis")
+source("5_helper_functions.R")
 
 connectbB()
 
@@ -8,8 +7,9 @@ tables = dbListTables(conn)
 tables = tables[!(tables %in% c('presence','all_data'))]
 
 dir.create('models',showWarnings = FALSE)
-dir.create('models/residuals',showWarnings = FALSE)
-dir.create('models/plots',showWarnings = FALSE)
+dir.create('models/aggregated',showWarnings = FALSE)
+dir.create('models/aggregated/residuals',showWarnings = FALSE)
+dir.create('models/aggregated/plots',showWarnings = FALSE)
 
 for(name in tables){
     da = dbGetQuery(conn, paste0("SELECT * FROM ",name))
@@ -23,7 +23,7 @@ for(name in tables){
     da$predicted <- predict(model, type= 'link')
     da$residual <- resid(model, type = 'deviance')
     
-    write.csv(da,paste0('models/residuals/',name,'.csv'))
+    write.csv(da,paste0('models/aggregated/residuals/',name,'.csv'))
     
     p = (
       ggplot(da)
@@ -35,13 +35,28 @@ for(name in tables){
       + theme(plot.title = element_text(hjust = 0.5))
     )
     
-    ggsave(paste0('models/plots/',name,'.png'), plot = p)
+    ggsave(paste0('models/aggregated/plots/',name,'.png'), plot = p)
     
 }
 
 disconnectdB()
 
-da = dbGetQuery(conn, 'SELECT permission_denied, posemo, negemo FROM presence LIMIT 4')
 
-model.matrix(permission_denied ~ posemo * negemo, da)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
