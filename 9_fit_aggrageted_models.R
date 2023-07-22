@@ -1,5 +1,6 @@
 setwd("~/Desktop/working8/Thesis")
 source("5_helper_functions.R")
+
 library(brms)
 options(mc.cores = 4)
 
@@ -15,14 +16,14 @@ counter = 0
 for(name in tables){
   da = dbGetQuery(conn, paste0("SELECT * FROM ",name))
   
-  to_int = names(da)[!(names(da) %in% c('tokencount','censored','not_censored'))]
-  factors = combn(to_int, 2, FUN = function(x) paste0(x,collapse=':'))
-  factors = c(to_int, factors)
-  form = paste0(factors, collapse = '+')
-  form = formula(paste0('censored | trials(censored + not_censored) ~ tokencount + ', form))
+  # to_int = names(da)[!(names(da) %in% c('tokencount','censored','not_censored'))]
+  # factors = combn(to_int, 2, FUN = function(x) paste0(x,collapse=':'))
+  # factors = c(to_int, factors)
+  # form = paste0(factors, collapse = '+')
+  # form = formula(paste0('censored | trials(censored + not_censored) ~ tokencount + ', form))
   
   prior = prior(normal(0,1), class = b)
-  model <- brm(form, 
+  model <- brm(censored | trials(censored + not_censored) ~ ., 
                data=da, 
                family=beta_binomial(),
                sample_prior = "yes",
@@ -30,7 +31,9 @@ for(name in tables){
                prior = prior)
 
   saveRDS(model, file = paste0('models/aggregatedbayes/',name,'.model'))
+  counter = counter + 1
   print(paste0(name, ' finished.'))
+  print(length(tables) - counter)
 }
 
 disconnectdB()
