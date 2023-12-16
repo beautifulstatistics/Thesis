@@ -30,6 +30,10 @@ print(summary(g2))
 
 sum(resid(g2, type = 'pearson')**2) / g2$df.residual
 
-
+# to_int = names(da)[!(names(da) %in% c('tokencount','censored','not_censored'))]
+# factors = combn(to_int, 2, FUN = function(x) paste0(x,collapse=':'))
+# factors = c(to_int, factors)
+# form = paste0(factors, collapse = '+')
+# form = formula(paste0('censored | trials(censored + not_censored) ~ tokencount + ', form))
 
 

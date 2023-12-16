@@ -16,13 +16,7 @@ counter = 0
 for(name in tables){
   da = dbGetQuery(conn, paste0("SELECT * FROM ",name))
   
-  # to_int = names(da)[!(names(da) %in% c('tokencount','censored','not_censored'))]
-  # factors = combn(to_int, 2, FUN = function(x) paste0(x,collapse=':'))
-  # factors = c(to_int, factors)
-  # form = paste0(factors, collapse = '+')
-  # form = formula(paste0('censored | trials(censored + not_censored) ~ tokencount + ', form))
-  
-  prior = prior(normal(0,1), class = b)
+  prior = prior(double_exponential(0,1), class = b)
   model <- brm(censored | trials(censored + not_censored) ~ ., 
                data=da, 
                family=beta_binomial(),
