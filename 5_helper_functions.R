@@ -82,6 +82,10 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
 make.formula <- function(response, predictors){
   predictors <- paste0(predictors, collapse = "+")
   
+  if(length(response) == 2){
+    response <- paste0('cbind(',response[1],',',response[2],')')
+  }
+  
   form_response <- paste0(response, ' ~ ')
   form_response <- paste0(form_response, predictors)
   return(formula(form_response))
@@ -234,8 +238,8 @@ loglike_corrected <- function (y, n, mu, wt, dev)
 }
 
 
-quasibinomial_corrected = binomial()
-quasibinomial_corrected$aic = loglike_corrected
+binomial_corrected = binomial()
+binomial_corrected$aic = loglike_corrected
 
 QAIC <- function(model){
   ll <- logLik(model)
@@ -298,18 +302,10 @@ models = list(
 )
 
 for(name in names(models)){
-  models[[name]] <- c('tokencount', models[[name]])
+  models[[name]] <- c('tokencount','image', models[[name]])
 }
 
 global <- unique(unlist(models))
-globalu <- c('i','we','you','shehe','they','youpl','ipron','prep','auxverb',
-                        'adverb','conj','negate','quanunit','prepend','specart','focuspast',
-                        'focuspresent','focusfuture','progm','modal_pa','general_pa','compare',
-                        'interrog','number','quant','posemo','anx','anger','sad','family',
-                        'friend','female','male','insight','cause','discrep','tentat','certain',
-                        'differ','see','hear','feel','body','health','sexual','ingest','affiliation',
-                        'achieve','power','reward','risk','motion','space','time','work','leisure',
-                        'home','money','relig','death','swear','netspeak','assent','nonflu','filler')
 
 
 ##################################
