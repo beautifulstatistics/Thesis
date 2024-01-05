@@ -1,0 +1,15 @@
+setwd("~/Desktop/working8/Thesis")
+source("5_helper_functions.R")
+
+connectbB()
+
+for(name in c('lowest')){
+  t1 <- Sys.time()
+  preds <- models[[name]]
+  aggregate_predictors(preds,name)
+  print(Sys.time()-t1)
+}
+
+print(dbListTables(conn))
+
+disconnectdB()

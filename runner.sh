@@ -1,4 +1,9 @@
-# !/bin/bash
+#!/bin/bash
+
+start=$(date)
+SECONDS=0
+
+echo "Script started at: $start"
 
 if [ -z "$1" ]
 then
@@ -19,14 +24,18 @@ sensors_pid=$!
 echo "Temp monitor PID: "$sensors_pid
 
 (while true; 
-    do swap=$(free | grep 'Swap:');
-       swap_value=$(echo $swap | awk '{print $2}');
-       awk -v date="$(date)" -v swap=$swap_value 'BEGIN{if (swap < 5*1024*1024) print "Swap Over Limit: " swap*1024*1024 " Gi"}';
-       sleep 900; 
+    do 
+       mem=$(free | grep 'Mem:');
+       total_mem=$(echo $mem | awk '{print $2}');
+       used_mem=$(echo $mem | awk '{print $3}');
+       
+       awk -v total=$total_mem -v used=$used_mem 'BEGIN{percent = (used/total)*100; if (percent > 90) print "RAM Over 90%: ", percent"%"}';
+       
+       sleep 900;
     done) &
 
-swap_pid=$!
-echo "Mem monitor PID: "$swap_pid
+mem_pid=$!
+echo "Mem monitor PID: "$mem_pid
 
 ls | grep -P "^$1" | while read -r line ;
 do
@@ -46,7 +55,7 @@ do
         ;;
     esac
 
-    if time "$interpreter" "$line" >> "./logs/$line.log"; then
+    if time "$interpreter" "$line" >> "./logs/$line.log" 2>&1; then
         echo "Finished"
     else
         echo "Error. Aborting."
@@ -60,3 +69,9 @@ kill $sensors_pid
 
 echo "Killing mem monitor."
 kill $swap_pid
+
+end=$(date)
+duration=$SECONDS
+
+echo "Script ended at: $end"
+echo "Total duration: $duration seconds."
