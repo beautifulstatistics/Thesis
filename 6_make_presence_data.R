@@ -1,4 +1,4 @@
-setwd("~/Desktop/working/Thesis")
+setwd("~/Desktop/working8/Thesis")
 source("5_functions.R")
 library(RSQLite)
 

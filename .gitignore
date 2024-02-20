@@ -8,5 +8,6 @@ models/
 logs/
 archived/
 words/
+texts/
 
 runner.out

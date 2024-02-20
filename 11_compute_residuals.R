@@ -1,39 +1,47 @@
 setwd("~/Desktop/working8/Thesis")
 source("5_helper_functions.R")
+library(ggplot2)
 
 connectbB()
 
-actual <- dbGetQuery(conn, "SELECT permission_denied FROM presence limit 1000")
+name = 'lowest'
+response = c('censored','N')
+predictors = models[[name]]
+
+checks <- dbGetQuery(conn, paste0("SELECT censored,N FROM ",name))
 
 path <- 'models/presence/'
+file <- paste0(path,name,'/',name,'.agg_logit')
+model <- readRDS(file)
 
-for(name in names(models)) {
-  print(name)
-  file <- paste0(path, name, '/', name, '.logit')
-  
-  model <- readRDS(file)
-  da <- make.data('permission_denied', predictors, table='presence', chunksize = 50*10^6)
-  actual$predicted = all_predict.shglm(model, da)
-  
-  actual$residual <- with(actual, PEARSON_RESID(permission_denied, predicted))
-  model$dispersion <- with(actual, DISP(model,residual))
-  
-  saveRDS(model, paste0(path, name, '/', name,'.logit'))
-  
-  df <- with(actual, bin.residuals(predicted, permission_denied))
-  
-  p = (
-    ggplot(df)
-    + aes(x=predicted,y=residuals)
-    + geom_point()
-    + xlab('Predicted Values')
-    + ylab('Binned Residuals')
-    + labs(title=paste0(name," Binned Residuals Vs Predicted"))
-    + theme(plot.title = element_text(hjust = 0.5))
-  )
-  
-  ggsave(paste0(path, name,'/',name,'.png'), plot = p)
-  break
+p2logit <- function(top,bottom){
+  log(top) - log(bottom) - log(bottom - top) + log(bottom)
 }
+
+da <- make.data(response, predictors, table=name)
+checks$predictedLogit = all_linear_predict.shglm(model, da)
+checks$actualLogit = with(checks, p2logit(censored,N))
+checks$predictedProp = all_predict.shglm(model, da)
+checks$actualProp = checks$censored/checks$N
+checks$actualLogit = with(checks, p2logit(censored,N))
+checks$residualDeviance = with(checks, deviance_resid(actualProp,predictedProp,N))
+
+# checks = read.csv('checks.csv')
+che = checks[checks$censored != 0,]
+
+p = (
+  ggplot(che)
+  + aes(x=predictedLinear,y=actualLogit)
+  + geom_point()
+  + geom_abline(slope=1,intercept = 0)
+  + xlab('Predicted Values')
+  + ylab('Deviance Residuals')
+  + labs(title=paste0(name," Model: Deviance Residuals Vs Linear Predicted"))
+  + theme(plot.title = element_text(hjust = 0.5))
+)
+
+p
+
+ggsave(paste0(path, name,'/',name,'.png'), plot = p)
 
 disconnectdB()

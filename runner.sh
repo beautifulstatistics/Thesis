@@ -55,7 +55,14 @@ do
         ;;
     esac
 
-    if time "$interpreter" "$line" >> "./logs/$line.log" 2>&1; then
+    "$interpreter" "$line" >> "./logs/$line.log" 2>&1 &
+    interpreter_pid=$!
+    echo "PID: $interpreter_pid"
+
+    wait $interpreter_pid
+    wait_exit_status=$?
+
+    if [ $wait_exit_status -eq 0 ]; then
         echo "Finished"
     else
         echo "Error. Aborting."
@@ -68,7 +75,7 @@ echo "Killing temp monitor."
 kill $sensors_pid
 
 echo "Killing mem monitor."
-kill $swap_pid
+kill $mem_pid
 
 end=$(date)
 duration=$SECONDS

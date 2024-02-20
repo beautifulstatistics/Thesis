@@ -3,7 +3,7 @@ source("5_helper_functions.R")
 
 connectbB()
 
-for(name in c('lowest')){
+for(name in names(models)){
   t1 <- Sys.time()
   preds <- models[[name]]
   aggregate_predictors(preds,name)

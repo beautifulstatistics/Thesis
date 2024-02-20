@@ -62,11 +62,11 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
       
       select = c(response, predictors)
       select = paste0(select, collapse = ',')
-      query = query = c("SELECT ", select," FROM ",table)
+      query = c("SELECT ", select," FROM ", table)
       if(!is.null(limit)){
         query = c(query, " LIMIT ", limit)
       }
-      query = paste(query,collapse = '')
+      query = paste(query, collapse = '')
       
       result <<- dbSendQuery(conn, query)
     } else {
@@ -154,10 +154,12 @@ all_linear_predict.shglm <- function(model, data){
   return(all_preds)
 }
 
-
 linear_predict.shglm <- function(model, newdata){
-  form <- formula(model$terms)
-  rowSums(model.matrix(form, newdata) %% coef(model))
+  form <- formula(model$tf)
+  if(length(form) == 0){
+    form <- formula(model)
+  }
+  rowSums(model.matrix(form, newdata) %*% coef(model))
 }
 
 all_predict.shglm <- function(model, data){
@@ -177,6 +179,18 @@ all_predict.shglm <- function(model, data){
   attr(all_preds,'names') <- NULL
   
   return(all_preds)
+}
+
+get_all_data <- function(data){
+  dat = data.frame()
+  
+  data(TRUE)
+  da2 <- data(FALSE)
+  while(!is.null(da2)) {
+    dat <- rbind(dat,da2)
+    da2 <- data(FALSE)
+  }
+  dat
 }
 
 predict.shglm <- function(model, newdata){
@@ -211,32 +225,40 @@ bin.residuals <- function(predicted,actual,nbins=NULL){
   return(df)
 }
 
-aggregate_predictors <- function(predictors, name){
-  predictors <- paste0(predictors, collapse = ", ")
+aggregate_predictors <- function(predictors, name, source_table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
+  predictors <- paste0(predictors, collapse = ", ")
   query <- paste0("
-    CREATE TABLE ", name," AS 
-    SELECT ", predictors,", 
+    CREATE TABLE ", name, " AS 
+    SELECT ", predictors, ", 
+           COUNT(*) as N,
            SUM(permission_denied) as censored,
-           COUNT(*) - SUM(permission_denied) as not_censored 
-    FROM presence
+           COUNT(*) - SUM(permission_denied) as not_censored,
+           SUM(permission_denied)/COUNT(*) as censored_proportion
+    FROM ",source_table,"
     GROUP BY ", predictors)
   
   dbExecute(conn, query)
   
-  cat('Table',name, 'made.\n')
+  cat('Table', name, 'made.\n')
 }
+
 
 ## THIS CORRECTS THE LOGLIKLIHOOD TO ACCOUNT FOR AGGREGATING
 
 loglike_corrected <- function (y, n, mu, wt, dev) 
 {
+  n <- wt
   m <- if (any(n > 1)) n else wt
-  correction <- ifelse(round(m) == 1, 0, log(choose(round(m), round(m * y))))
+  correction <- ifelse(round(m) == 1, 0, lchoose(round(m), round(m * y)))
   -2 * sum(ifelse(m > 0, (wt/m), 0) * dbinom(round(m * y), 
                                              round(m), mu, log = TRUE) - correction)
 }
 
+dev.residual_corrected = function (y, mu, wt){
+  wt <- wt[1:2]
+  binomial()$dev.resids(y, mu, wt)
+}
 
 binomial_corrected = binomial()
 binomial_corrected$aic = loglike_corrected
@@ -258,8 +280,17 @@ disp <- function(model, residual){
   sum(residual**2)/model$df.residual
 }
 
-pearson_resid <- function(actual, predicted){
-  (actual - predicted)/sqrt(predicted * (1-predicted))
+pearson_resid <- function(actualCens, predictedProp, N){
+  (actualCens - N*predictedProp)/sqrt(N*predictedProp*(1-predictedProp))
+}
+
+deviance_resid <- function(actualProp,predictedProp,N){
+  r1 = sqrt(binomial()$dev.resids(actualProp,predictedProp,N))
+  ifelse(actualProp > predictedProp, r1, -r1)
+}
+
+p2logit <- function(top,bottom){
+  log(top) - log(bottom) - log(bottom - top) + log(bottom)
 }
 
 ### MODELS
@@ -289,6 +320,8 @@ models = list(
   relative = c('motion','space','time'),
   informal = c('swear','netspeak','assent','nonflu','filler'),
   
+  collective_action = c('ppron','focuspresent','focusfuture','drives','motion','space','time'),
+  
   lowest = c('i','we','you','shehe','they','youpl','ipron','prep','auxverb',
     'adverb','conj','negate','quanunit','prepend','specart','focuspast',
     'focuspresent','focusfuture','progm','modal_pa','general_pa','compare',
@@ -296,9 +329,7 @@ models = list(
     'friend','female','male','insight','cause','discrep','tentat','certain',
     'differ','see','hear','feel','body','health','sexual','ingest','affiliation',
     'achieve','power','reward','risk','motion','space','time','work','leisure',
-    'home','money','relig','death','swear','netspeak','assent','nonflu','filler'),
-  
-  collective_action = c('ppron','focuspresent','focusfuture','drives','motion','space','time')
+    'home','money','relig','death','swear','netspeak','assent','nonflu','filler')
 )
 
 for(name in names(models)){
