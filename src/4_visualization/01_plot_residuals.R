@@ -2,7 +2,7 @@ setwd("~/Desktop/working8/Thesis")
 source("5_helper_functions.R")
 library(ggplot2)
 
-name = 'lowest'
+name = 'all_data'
 predictors = models[[name]]
 
 path <- paste0('models/presence/', name,'/')

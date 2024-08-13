@@ -15,9 +15,14 @@ connectbB <- function(){
   if(!validdB(conn)){
     conn <<- dbConnect(SQLite(), dbname="data/counts.db")
   
-    cache_size <- 44 * (1024^3) / 4096
+    cache_size <- 15 * (1024^3) / 4096
     query <- paste0("PRAGMA cache_size = ", cache_size)
     dbExecute(conn, query)
+    
+    memory_limit <- 20 * 1024^3
+    query <- paste0("PRAGMA memory_limit = ", memory_limit)
+    dbExecute(conn, query)
+    
   }
   
 }
@@ -198,7 +203,7 @@ predict.shglm <- function(model, newdata){
   1 / (1 + exp(-linear_predict))
 }
 
-bin.residuals <- function(predicted,actual,nbins=NULL){
+bin.residuals_original <- function(predicted,actual,nbins=NULL){
   if(is.null(nbins)){
     nbins <- floor(sqrt(length(actual)))
   }
@@ -220,10 +225,70 @@ bin.residuals <- function(predicted,actual,nbins=NULL){
   
   ellipse <- 2 * sqrt(pred_mean_sorted*(1-pred_mean_sorted)/length_bin_sorted)
   
-  df <- data.frame(residuals=res_mean, predicted=pred_mean, start=cumsum(length_bin), ellipsex=pred_mean_sorted, ellipsey=ellipse)
+  df <- data.frame(residuals=res_mean, 
+                   predicted=pred_mean, 
+                   start=cumsum(length_bin), 
+                   ellipsex=pred_mean_sorted, 
+                   ellipsey=ellipse)
   
   return(df)
 }
+
+bin.residuals.quantile <- function(predicted, actual, nbins = NULL) {
+  if (is.null(nbins)) {
+    nbins <- floor(sqrt(length(actual)))
+  }
+  
+  residual <- predicted - actual
+  support <- seq(0, 1, length.out = nbins + 1)
+  order <- quantile(predicted, support, names = FALSE)
+  order <- cut(predicted, breaks = unique(order), labels = FALSE)
+  
+  res_mean <- aggregate(residual, by = list(order), FUN = mean)$x
+  pred_mean <- aggregate(predicted, by = list(order), FUN = mean)$x
+  length_bin <- aggregate(actual, by = list(order), FUN = length)$x
+  
+  res_sd <- aggregate(residual, by = list(order), FUN = sd)$x
+  res_se <- res_sd / sqrt(length_bin)
+  ellipse <- 1.96 * res_se
+  
+  pred_mean_order <- order(pred_mean)
+  pred_mean_sorted <- pred_mean[pred_mean_order]
+  length_bin_sorted <- length_bin[pred_mean_order]
+  
+  df <- data.frame(residuals = res_mean, predicted = pred_mean, start = cumsum(length_bin),
+                   ellipsex = pred_mean_sorted, ellipsey = ellipse[pred_mean_order])
+  
+  return(df)
+}
+
+bin.residuals.range <-  function(predicted, actual, nbins = NULL) {
+  if (is.null(nbins)) {
+    nbins <- floor(sqrt(length(actual)))
+  }
+  
+  residual <- predicted - actual
+  breaks <- seq(min(predicted), max(predicted), length.out = nbins + 1)
+  order <- cut(predicted, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+  
+  res_mean <- aggregate(residual, by = list(order), FUN = mean)$x
+  pred_mean <- aggregate(predicted, by = list(order), FUN = mean)$x
+  length_bin <- aggregate(actual, by = list(order), FUN = length)$x
+  
+  res_sd <- aggregate(residual, by = list(order), FUN = sd)$x
+  res_se <- res_sd / sqrt(length_bin)
+  ellipse <- 1.96 * res_se
+  
+  pred_mean_order <- order(pred_mean)
+  pred_mean_sorted <- pred_mean[pred_mean_order]
+  length_bin_sorted <- length_bin[pred_mean_order]
+  
+  df <- data.frame(residuals = res_mean, predicted = pred_mean, start = cumsum(length_bin),
+                   ellipsex = pred_mean_sorted, ellipsey = ellipse[pred_mean_order])
+  
+  return(df)
+}
+
 
 aggregate_predictors <- function(predictors, name, source_table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
@@ -243,6 +308,29 @@ aggregate_predictors <- function(predictors, name, source_table = 'presence'){
   cat('Table', name, 'made.\n')
 }
 
+os_walk <- function(path) {
+  walk_recursive <- function(dir) {
+    files <- list.files(dir, full.names = TRUE, recursive = FALSE)
+    dirs <- files[file.info(files)$isdir]
+    
+    file_paths <- files[!files %in% dirs]
+    file_paths
+  }
+  
+  walk_recursive(path)
+}
+
+bic <- function(model){
+  if (is.null(model$coefficients)) {
+    return(Inf)
+  }
+  
+  k <- length(model$coefficients)
+  n <- model$n
+  tll <- 2 * as.numeric(logLik(model))
+  bic <- log(n) * k - tll
+  bic
+}
 
 ## THIS CORRECTS THE LOGLIKLIHOOD TO ACCOUNT FOR AGGREGATING
 
@@ -293,6 +381,37 @@ p2logit <- function(top,bottom){
   log(top) - log(bottom) - log(bottom - top) + log(bottom)
 }
 
+logLik.mock_glm <- function(object, ...) {
+  structure(-Inf, 
+            df = length(object$coefficients), 
+            class = "logLik")
+}
+
+create_mock_model <- function(predictors, form, link) {
+  mock_model <- list(
+    coefficients = structure(rep(NA_real_, length(predictors) + 1), 
+                             names = c("(Intercept)", predictors)),
+    df.residual = Inf,
+    df.null = Inf,
+    null.deviance = Inf,
+    deviance = Inf,
+    aic = Inf,
+    family = binomial(link = link),
+    formula = form,
+    call = call("glm", formula = form)
+  )
+  class(mock_model) <- c("mock_glm","glm", "lm")
+  
+  mock_loglik <- structure(-Inf, 
+                           df = length(mock_model$coefficients), 
+                           nobs = Inf,
+                           class = "logLik")
+  
+  mock_model$loglik <- mock_loglik
+  
+  return(mock_model)
+}
+
 ### MODELS
 
 models = list(
@@ -336,8 +455,7 @@ for(name in names(models)){
   models[[name]] <- c('tokencount','image', models[[name]])
 }
 
-global <- unique(unlist(models))
-
+models[['global']] <- unique(unlist(models))
 
 ##################################
 
@@ -410,3 +528,144 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
   return(ans)
 }
 
+shglm_optimized <- function(formula, datafun, family = gaussian(), weights.fo = NULL, 
+                  start = NULL, etastart = NULL, mustart = NULL, offset = NULL, 
+                  maxit = 25, k = 2, chunksize = 5000, sparse = NULL, trace = FALSE, 
+                  all.levels = FALSE, set.default = list(), ...) {
+  
+  # Input validation
+  if (!is.null(start) || !is.null(mustart) || !is.null(etastart)) {
+    stop("start, mustart, and etastart are not implemented yet")
+  }
+  
+  # Initialize data
+  dati <- datafun(reset = TRUE)
+  dati <- datafun(reset = FALSE)
+  on.exit(datafun(reset = TRUE), add = TRUE)  # Ensure datafun is reset on exit
+  
+  # Setup model components
+  tf <- terms(formula, data = dati)
+  M <- model.frame(tf, dati)
+  y <- M[[1]]
+  X <- model.matrix(tf, M)
+  offset <- model.offset(M)
+  
+  # Initialize parameters
+  set <- list(sparselim = 0.9, camp = 0.01, eigendec = TRUE, 
+              row.chunk = NULL, tol.solve = .Machine$double.eps, acc = 1e-08, 
+              tol.values = 1e-07, tol.vectors = 1e-07, method = "eigen")
+  set[names(set.default)] <- set.default
+  
+  # Initialize model objects
+  obj <- list(terms = tf)
+  if (!all.levels) {
+    fa <- which(attributes(attributes(M)$terms)$dataClasses == "factor")
+    if (length(fa) > 0) {
+      obj$levels <- lapply(M[fa], levels)
+    }
+  }
+  
+  # Initialize variables
+  nobs <- length(y)
+  weights <- if (is.null(weights.fo)) rep(1, nobs) else model.frame(weights.fo, dati)[[1]]
+  intercept <- attributes(tf)$intercept
+  nvar <- ncol(X)
+  offset <- if (is.null(offset)) rep.int(0, nobs) else offset
+  sparse <- if (is.null(sparse)) is.sparse(X, set$sparselim, set$camp) else sparse
+  
+  # Main iteration
+  iter <- 0
+  tol <- 1
+  dev <- nobs
+  weights.cum <- wt <- wy <- nulldev <- tot.obs <- zero.weights <- 0
+  block.cum <- nrow(X)
+  
+  while (tol > set$acc && iter < maxit) {
+    dev.prec <- dev
+    dev <- RSS <- 0
+    iter <- iter + 1
+    
+    # Use sparse matrices if appropriate
+    XTX <- if (sparse) Matrix(0, ncol(X), ncol(X)) else matrix(0, ncol(X), ncol(X))
+    XTz <- Matrix(0, ncol(X), 1)
+    
+    repeat {
+      if (iter > 1) {
+        eta <- offset + if (sparse) drop(X %*% start) else as.vector(X %*% start)
+        mu <- family$linkinv(eta)
+      } else {
+        mu <- family$linkinv(eta <- family$linkfun(y))
+      }
+      
+      # Calculate model components
+      dev <- dev + sum(family$dev.resids(y, mu, weights))
+      W <- weights * family$mu.eta(eta)^2 / family$variance(mu)
+      z <- (eta - offset) + (y - mu) / family$mu.eta(eta)
+      
+      # Update matrices
+      XTX <- XTX + if (sparse) t(X) %*% (X * W) else crossprod(X, X * W)
+      XTz <- XTz + if (sparse) t(X) %*% (W * z) else crossprod(X, W * z)
+      
+      # Update statistics
+      RSS <- RSS + sum(W * ((y - mu) / family$mu.eta(eta))^2)
+      if (iter == 1) {
+        weights.cum <- weights.cum + sum(weights == 0)
+        tot.obs <- tot.obs + nobs
+        wt <- wt + sum(weights)
+        wy <- wy + sum(weights * y)
+        zero.weights <- zero.weights + sum(weights == 0)
+        block.cum <- block.cum + nrow(X)
+      }
+      
+      # Get next chunk of data
+      dati <- datafun(reset = FALSE)
+      if (is.null(dati)) break
+      
+      # Process new chunk
+      M <- model.frame(tf, dati)
+      y <- M[[1]]
+      X <- model.matrix(tf, M)
+      offset <- model.offset(M) %||% rep.int(0, nrow(X))
+      weights <- if (is.null(weights.fo)) rep(1, nrow(X)) else model.frame(weights.fo, dati)[[1]]
+      nobs <- length(y)
+      
+      # Force garbage collection to free memory
+      gc()
+    }
+    
+    # Update coefficients
+    start_new <- solve(XTX, XTz, tol = set$tol.solve)
+    tol <- max(abs(start_new - start) / (abs(start) + 0.1))
+    start <- start_new
+    
+    # Force garbage collection
+    gc()
+  }
+  
+  # Finalize model
+  n.ok <- tot.obs - zero.weights
+  resdf <- n.ok - nvar
+  dispersion <- if (family$family %in% c("poisson", "binomial")) 1 else RSS / resdf
+  
+  # Create and return model object
+  rval <- list(
+    coefficients = start,
+    logLik = -dev / 2,
+    iter = iter,
+    tol = tol,
+    family = family,
+    df = resdf,
+    XTX = XTX,
+    dispersion = dispersion,
+    RSS = RSS,
+    deviance = dev,
+    nulldf = n.ok - as.integer(intercept),
+    ngoodobs = n.ok,
+    n = tot.obs,
+    intercept = intercept,
+    convergence = tol <= set$acc
+  )
+  
+  class(rval) <- "speedglm"
+  rval
+}

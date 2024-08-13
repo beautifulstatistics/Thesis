@@ -5,13 +5,18 @@ SECONDS=0
 
 echo "Script started at: $start"
 
-if [ -z "$1" ]
-then
-    echo "Please specify which files to run!"
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <folder_prefix> <script_prefix>"
     exit 1
 fi
 
+folder_prefix="$1"
+script_prefix="$2"
+
 export PYTHONUNBUFFERED="1"
+
+# Create logs directory if it doesn't exist
+mkdir -p logs
 
 (while true;
     do sensors |
@@ -37,38 +42,42 @@ echo "Temp monitor PID: "$sensors_pid
 mem_pid=$!
 echo "Mem monitor PID: "$mem_pid
 
-ls | grep -P "^$1" | while read -r line ;
-do
-    echo -n $line" "
+find src -type d -name "${folder_prefix}*" | while read -r folder; do
+    find "$folder" -type f \( -name "${script_prefix}*.R" -o -name "${script_prefix}*.py" \) | sort | while read -r file; do
+        echo -n "Running $file "
 
-    rm "./logs/"$line".log" 2> /dev/null
+        directory=$(dirname "$file")
+        filename=$(basename "$file")
+        log_file="logs/${directory//\//_}_$filename.log"
 
-    case $line in
-        *.py)
-            interpreter="python"
-        ;;
-        *.R)
-            interpreter="Rscript"
-        ;;
-        *)
-            continue
-        ;;
-    esac
+        rm "$log_file" 2> /dev/null
 
-    "$interpreter" "$line" >> "./logs/$line.log" 2>&1 &
-    interpreter_pid=$!
-    echo "PID: $interpreter_pid"
+        case $file in
+            *.py)
+                interpreter="python"
+            ;;
+            *.R)
+                interpreter="Rscript"
+            ;;
+            *)
+                continue
+            ;;
+        esac
 
-    wait $interpreter_pid
-    wait_exit_status=$?
+        (cd "$directory" && "$interpreter" "$filename" > "../../$log_file" 2>&1) &
+        interpreter_pid=$!
+        echo "PID: $interpreter_pid"
 
-    if [ $wait_exit_status -eq 0 ]; then
-        echo "Finished"
-    else
-        echo "Error. Aborting."
-        exit 1
-    fi
+        wait $interpreter_pid
+        wait_exit_status=$?
 
+        if [ $wait_exit_status -eq 0 ]; then
+            echo "Finished"
+        else
+            echo "Error. Aborting."
+            exit 1
+        fi
+    done
 done
 
 echo "Killing temp monitor."

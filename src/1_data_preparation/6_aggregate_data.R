@@ -1,5 +1,5 @@
 setwd("~/Desktop/working8/Thesis")
-source("5_helper_functions.R")
+source("./scripts/helper/functions.R")
 
 connectbB()
 

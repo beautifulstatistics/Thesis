@@ -1,5 +1,5 @@
 setwd("~/Desktop/working8/Thesis")
-source("5_functions.R")
+source("../functions.R")
 library(RSQLite)
 
 connectbB()

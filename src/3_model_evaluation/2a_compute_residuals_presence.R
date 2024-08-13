@@ -1,5 +1,5 @@
 setwd("~/Desktop/working8/Thesis")
-source("5_helper_functions.R")
+source("./src/utils/helper_functions.R")
 library(ggplot2)
 
 connectbB()
@@ -10,8 +10,8 @@ predictors = models[[name]]
 
 checks <- dbGetQuery(conn, paste0("SELECT censored,N FROM ",name))
 
-path <- 'models/presence/'
-file <- paste0(path,name,'/',name,'.agg_logit')
+path <- file.path('results', 'models', 'presence')
+file <- file.path(path, name, name,'.agg_logit')
 model <- readRDS(file)
 
 p2logit <- function(top,bottom){
@@ -26,7 +26,6 @@ checks$actualProp = checks$censored/checks$N
 checks$actualLogit = with(checks, p2logit(censored,N))
 checks$residualDeviance = with(checks, deviance_resid(actualProp,predictedProp,N))
 
-# checks = read.csv('checks.csv')
 che = checks[checks$censored != 0,]
 
 p = (
@@ -36,11 +35,9 @@ p = (
   + geom_abline(slope=1,intercept = 0)
   + xlab('Predicted Values')
   + ylab('Deviance Residuals')
-  + labs(title=paste0(name," Model: Deviance Residuals Vs Linear Predicted"))
+  + labs(title=paste0(name," Deviance Residuals Vs Linear Predicted"))
   + theme(plot.title = element_text(hjust = 0.5))
 )
-
-p
 
 ggsave(paste0(path, name,'/',name,'.png'), plot = p)
 
