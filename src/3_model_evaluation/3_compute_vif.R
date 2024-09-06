@@ -1,10 +1,15 @@
 setwd("~/Desktop/working8/Thesis")
-source("5_helper_functions.R")
+source("./src/utils/helper_functions.R")
 
+time()
 connectbB()
 
-vs <- vif(global, 'presence', limit = 10**7)
+name <- 'global'
+table <- 'presence'
+
+vs <- vif(models[[name]], table)
 
 print(vs)
 
 disconnectdB()
+time()

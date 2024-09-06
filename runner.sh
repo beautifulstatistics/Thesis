@@ -18,12 +18,12 @@ export PYTHONUNBUFFERED="1"
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
-(while true;
-    do sensors |
-       grep -oP '(?<=Core [0-9]:        \+)[0-9]{2}' |
-       awk -v date="$(date)" '$1>82{c++}; END{if (c+0 > 1) print "Cores Over Temp: " c+0};';
-       sleep 900;
-    done) &
+(while true; do
+    sensors |
+    grep -oP '(?<=Core [0-9]:        \+)[0-9]{2}' |
+    awk -v date="$(date '+%Y-%m-%d %H:%M:%S')" '$1>82{c++}; END{if (c+0 > 1) print date " - Cores Over Temp: " c+0}';
+    sleep 900;
+done) &
 
 sensors_pid=$!
 echo "Temp monitor PID: "$sensors_pid
@@ -43,7 +43,7 @@ mem_pid=$!
 echo "Mem monitor PID: "$mem_pid
 
 find src -type d -name "${folder_prefix}*" | while read -r folder; do
-    find "$folder" -type f \( -name "${script_prefix}*.R" -o -name "${script_prefix}*.py" \) | sort | while read -r file; do
+    find "$folder" -type f \( -name "${script_prefix}*.R" -o -name "${script_prefix}*.py" \) -not -path "*/archive/*" | sort | while read -r file; do
         echo -n "Running $file "
 
         directory=$(dirname "$file")
