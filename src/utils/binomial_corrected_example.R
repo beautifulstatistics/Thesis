@@ -1,35 +1,48 @@
 setwd("~/Desktop/working8/Thesis")
-source("5_helper_functions.R")
-source('5.5_binomial_corrected.R')
+source("./src/utils/helper_functions.R")
+source("./src/utils/binomial_corrected.R")
 
-connectbB()
+connectdB()
 
 dbExecute(conn, "DROP TABLE IF EXISTS test_full")
 predictors = c('affect','functions','drives')
-da <- make.data('permission_denied',predictors,table='presence', limit = 10**6)
+da <- make.data('permission_denied',predictors,table='presence', limit = 10^6)
 da(T)
 df = da(F)
 df$permission_denied = sample(c(0,1), nrow(df), replace=TRUE)
 dbWriteTable(conn, "test_full", df)
-aggregate_predictors(predictors,'test_agg', source_table='test_full')
+aggregate.predictors.binomial('permission_denied',predictors,'test_agg', source_table='test_full')
 
-dffd <- make.data('permission_denied',predictors, table='test_full')
-dffd(T)
-dff = dffd(F)
+dfull <- make.data('permission_denied',predictors, table='test_full')
+dfull(T)
+dfullall = dfull(F)
 
-dffa <- make.data(c('censored','not_censored'),c(predictors,'N','censored_proportion'), table='test_agg')
-dffa(T)
-dfa = dffa(F)
+daggdup <- make.data('permission_denied',c(predictors,'N'), table='test_agg_dup')
+daggdup(T)
+daggdupall = daggdup(F)
+
+dagg <- make.data(c('censored','not_censored'),c(predictors,'N','censored_proportion'), table='test_agg')
+dagg(T)
+daggall = dagg(F)
+
+aggregate.predictors.duplicates(c('permission_denied',predictors),
+                                'test_agg_dup','test_full')
+
 
 form <- make.formula('permission_denied',predictors)
-g1 <- glm(form, dff, family = binomial())
-g2 <- speedglm(form, dff, family = binomial())
-g3 <- shglm(form, dffd, family = binomial())
+g1 <- glm(form, dfullall, family = binomial())
+g2 <- speedglm(form, dfullall, family = binomial())
+g3 <- shglm(form, dfull, family = binomial())
+
+g4 <- glm(form, daggdupall, family= binomial(), weights=N)
+g5 <- speedglm(form, daggdupall, family= binomial_corrected, weights=N)
+g6 <- shglm2(form, daggdup, family = binomial(), weights.fo=~N)
 
 form <- make.formula('censored_proportion', predictors)
-g4 <- glm(form, dfa, family= binomial_corrected, weights=N)
-g5 <- speedglm(form, dfa, family= binomial_corrected, weights=N)
-g6 <- shglm2(form, dffa, family = binomial(), weights.fo=~N)
+g7 <- glm(form, daggall, family= binomial_corrected, weights=N)
+g8 <- speedglm(form, daggall, family= binomial_corrected, weights=N)
+g9 <- shglm2(form, dagg, family = binomial(), weights.fo=~N)
+
 
 logLik(g1)
 logLik(g2)
@@ -37,6 +50,13 @@ logLik(g3)
 logLik(g4)
 logLik(g5)
 logLik(g6)
+logLik(g7)
+logLik(g8)
+logLik(g9)
+
 
 disconnectdB()
 ###############
+
+
+

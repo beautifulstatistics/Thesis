@@ -11,20 +11,33 @@ clean <- function(path){
 ll = list()
 lla = list()
 llb = list()
-for(path in os_walk("./models")){
-  model <- readRDS(path)
-  name <- clean(path)
+for (path in list.files("./models", full.names = TRUE, recursive = FALSE)) {
+  name <- path
+  # if (grepl("residual|global_numeric_rpart|global_presence_rpart", name)) {
+  #   next
+  # }
   
-  ll[[name]] = -as.numeric(logLik(model))
-  lla[[name]] = model$aic
-  llb[[name]] = bic(model)
+  print(name)
+  if (!grepl("model$", name)) {
+    next
+  }
+  
+  
+  model <- readRDS(path)
+
+  name <- clean(name)
+  ll[[name]] <- -as.numeric(logLik(model))
+  lla[[name]] <- aic(model)
+  llb[[name]] <- bic(model)
 }
 
-ll <- llb
+ll <- lla
 ll <- unlist(ll)
 ll <- sort(ll - min(ll))
 ll
 
 top <- length(ll)
-bottom <- length(names(models))*2*3
-paste0(top,'/',bottom,' = ',round(top/bottom,2), ' finished')
+paste0(top,' Models')
+
+
+# model <- readRDS('models/global_presence_logit.model')

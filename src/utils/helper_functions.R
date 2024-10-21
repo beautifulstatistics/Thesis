@@ -9,22 +9,28 @@ validdB <- function(conn){
   })
 }
 
-connectbB <- function(){
+connectdB <- function(cache_size=48, memory_limit = 52, 
+                      temp_dir = '/mnt/working8/Thesis/tmp', 
+                      dbname="/mnt/working8/Thesis/data/counts.db"){
   result <<- NULL
   
-  if(!validdB(conn)){
-    conn <<- dbConnect(SQLite(), dbname="data/counts.db")
+  Sys.setenv(TMPDIR = temp_dir)
+  Sys.setenv(SQLITE_TMPDIR = temp_dir)
   
-    cache_size <- 15 * (1024^3) / 4096
+  if(!validdB(conn)){
+    conn <<- dbConnect(SQLite(), dbname=dbname)
+    
+    cache_size <- cache_size * (1024^3) / 4096
     query <- paste0("PRAGMA cache_size = ", cache_size)
     dbExecute(conn, query)
     
-    memory_limit <- 20 * 1024^3
+    memory_limit <- memory_limit * 1024^3
     query <- paste0("PRAGMA memory_limit = ", memory_limit)
     dbExecute(conn, query)
     
+    # Force SQLite to use file-based temp storage
+    # dbExecute(conn, "PRAGMA temp_store = 2")
   }
-  
 }
 
 disconnectdB <- function(){
@@ -34,7 +40,6 @@ disconnectdB <- function(){
   if(validdB(conn)){
     dbDisconnect(conn)
   }
-  
 }
 
 is.expired <- function(result) {
@@ -52,7 +57,13 @@ is.expired <- function(result) {
   
 }
 
-make.data <- function(response, predictors = NULL, table = 'all_data', limit = NULL, chunksize = 10**6){
+make.data <- function(response, 
+                      predictors = NULL, 
+                      table = 'all_data',
+                      where = NULL,
+                      limit = NULL, 
+                      chunksize = 10**6){
+  
   function(reset=FALSE){
     if(!validdB(conn)){
       print('Connection is closed.')
@@ -68,11 +79,15 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
       select = c(response, predictors)
       select = paste0(select, collapse = ',')
       query = c("SELECT ", select," FROM ", table)
+      if (!is.null(where)){
+        query <- c(query," WHERE ", where)
+      }
+      
       if(!is.null(limit)){
         query = c(query, " LIMIT ", limit)
       }
-      query = paste(query, collapse = '')
       
+      query = paste(query, collapse = '')
       result <<- dbSendQuery(conn, query)
     } else {
       rval = dbFetch(result, n = chunksize)
@@ -82,6 +97,20 @@ make.data <- function(response, predictors = NULL, table = 'all_data', limit = N
       return(rval)
     }
   }
+}
+
+make.data.all <- function(...){
+  datafun <- make.data(...)
+  datafun(TRUE)
+  df <- data.frame()
+  
+  while(TRUE){
+    row <- datafun()
+    if(is.null(row)) break
+    df <- rbind(df, row)
+  }
+  
+  return(df)
 }
 
 make.formula <- function(response, predictors){
@@ -102,21 +131,70 @@ vif_core <- function(response, predictors, table, limit){
   form <<- make.formula(response, predictors)
   lm1 <- shlm(form, datafun = data)
   
-  vifv <- 1/summary(lm1)$r.squared
+  vifv <- 1/(1-summary(lm1)$r.squared)
   names(vifv) <- response
   vifv
 }
 
-vif <- function(predictors, table, limit = NULL){
-  vifs <- NULL
-  for(name in predictors){
-    predictors_clean = predictors[predictors != name]
-    value <- vif_core(name, predictors_clean, table = table, limit = limit)
-    vifs <- c(vifs, value)
-    cat(name)
-    cat(',')
+format_time <- function(seconds) {
+  if (seconds < 60) {
+    return(sprintf("%.1f seconds", seconds))
+  } else if (seconds < 3600) {
+    minutes <- floor(seconds / 60)
+    remaining_seconds <- seconds %% 60
+    return(sprintf("%d min %d sec", minutes, round(remaining_seconds)))
+  } else {
+    hours <- floor(seconds / 3600)
+    remaining_minutes <- floor((seconds %% 3600) / 60)
+    return(sprintf("%d hr %d min", hours, remaining_minutes))
   }
-  cat('\n')
+}
+
+vif <- function(predictors, table, limit = NULL){
+  
+  dir.create('evaluation', showWarnings = FALSE)
+  
+  checkpoint_file = file.path("evaluation","vif_checkpoint.rds")
+  
+  if(file.exists(checkpoint_file)){
+    checkpoint <- readRDS(checkpoint_file)
+    vifs <- checkpoint$vifs
+    completed_predictors <- checkpoint$completed_predictors
+    start_time <- checkpoint$start_time
+    print(completed_predictors)
+  } else {
+    vifs <- vector("numeric", length(predictors))
+    names(vifs) <- predictors
+    completed_predictors <- character(0)
+    start_time <- Sys.time()
+  }
+  
+  remaining_predictors <- setdiff(predictors, completed_predictors)
+  
+  for(name in remaining_predictors){
+    predictors_clean <- predictors[predictors != name]
+    vifs[name] <- vif_core(name, predictors_clean, table = table, limit = limit)
+    
+    completed_predictors <- c(completed_predictors, name)
+    
+    elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+    avg_time_per_iteration <- elapsed / length(completed_predictors)
+    remaining_iterations <- length(remaining_predictors) - which(remaining_predictors == name)
+    estimated_remaining_time <- avg_time_per_iteration * remaining_iterations
+    
+    cat(sprintf("\rCompleted %d/%d (%.1f%%). Elapsed: %s. Estimated remaining: %s", 
+                length(completed_predictors), length(predictors), 
+                length(completed_predictors)/length(predictors)*100, 
+                format_time(elapsed), format_time(estimated_remaining_time)))
+    
+    cat(sprintf("\nJust checked: %s, VIF: %.2f", name, vifs[name]))
+
+    saveRDS(list(vifs = vifs, 
+                 completed_predictors = completed_predictors, 
+                 start_time = start_time), 
+            file = checkpoint_file)
+  }
+  cat("\n")
   
   sort(vifs, decreasing = TRUE)
 }
@@ -142,39 +220,14 @@ ranrows <- function(predictors, response=NULL, table='presence', limit=1000){
   dbGetQuery(conn, paste0("SELECT ", preds," FROM ",table," ORDER BY RANDOM() LIMIT ", limit))
 }
 
-all_linear_predict.shglm <- function(model, data){
+predict.shglm.all <- function(model, data, type='response'){
   all_preds_list <- list()
   index <- 1
   
   data(TRUE)
   da2 <- data(FALSE)
   while(!is.null(da2)) {
-    preds <- linear_predict.shglm(model, da2)
-    all_preds_list[[index]] <- preds
-    index <- index + 1
-    da2 <- data(FALSE)
-  }
-
-  all_preds <- do.call(c, all_preds_list)
-  return(all_preds)
-}
-
-linear_predict.shglm <- function(model, newdata){
-  form <- formula(model$tf)
-  if(length(form) == 0){
-    form <- formula(model)
-  }
-  rowSums(model.matrix(form, newdata) %*% coef(model))
-}
-
-all_predict.shglm <- function(model, data){
-  all_preds_list <- list()
-  index <- 1
-  
-  data(TRUE)
-  da2 <- data(FALSE)
-  while(!is.null(da2)) {
-    preds <- predict.shglm(model, da2)
+    preds <- predict(model, newdata = da2, type=type)
     all_preds_list[[index]] <- preds
     index <- index + 1
     da2 <- data(FALSE)
@@ -186,120 +239,102 @@ all_predict.shglm <- function(model, data){
   return(all_preds)
 }
 
-get_all_data <- function(data){
-  dat = data.frame()
+delete.columns <- function(columns_to_delete, table){
+  all_columns <- dbListFields(conn, table)
+  columns_to_keep <- setdiff(all_columns, columns_to_delete)
   
-  data(TRUE)
-  da2 <- data(FALSE)
-  while(!is.null(da2)) {
-    dat <- rbind(dat,da2)
-    da2 <- data(FALSE)
+  if (len(setdiff(all_columns,columns_to_keep)) == 0 ){
+    print("Columns not in table!")
+    return()
   }
-  dat
+
+  create_new_table_sql <- paste0("CREATE TABLE new_table AS SELECT ",
+  paste(columns_to_keep, collapse = ", "),
+  " FROM ", table)
+
+  dbExecute(conn, create_new_table_sql)
+  dbExecute(conn, paste0("DROP TABLE ", table))
+  dbExecute(con, paste0("ALTER TABLE new_table RENAME TO ", table))
 }
 
-predict.shglm <- function(model, newdata){
-  linear_predict <- linear_predict.shglm(model, newdata)
-  1 / (1 + exp(-linear_predict))
-}
 
-bin.residuals_original <- function(predicted,actual,nbins=NULL){
-  if(is.null(nbins)){
-    nbins <- floor(sqrt(length(actual)))
-  }
-  
-  residual <- predicted - actual
-  
-  support <- seq(0,1,length.out=nbins+1)
-  order <- quantile(predicted,support,names=FALSE)
-  order <- cut(predicted,breaks=unique(order),labels=FALSE)
-  order <- list(order)
-  
-  res_mean <- aggregate(residual,by=order, FUN=mean)$x
-  pred_mean <- aggregate(predicted,by=order, FUN=mean)$x
-  length_bin <- aggregate(actual,by=order, FUN=length)$x
-  
-  pred_mean_order <- order(pred_mean)
-  pred_mean_sorted <- pred_mean[pred_mean_order]
-  length_bin_sorted <- length_bin[pred_mean_order]
-  
-  ellipse <- 2 * sqrt(pred_mean_sorted*(1-pred_mean_sorted)/length_bin_sorted)
-  
-  df <- data.frame(residuals=res_mean, 
-                   predicted=pred_mean, 
-                   start=cumsum(length_bin), 
-                   ellipsex=pred_mean_sorted, 
-                   ellipsey=ellipse)
-  
-  return(df)
-}
-
-bin.residuals.quantile <- function(predicted, actual, nbins = NULL) {
+bin.residuals <- function(predicted, actual, nbins = NULL, type = 'quantile', return_bin_indices = FALSE) {
   if (is.null(nbins)) {
     nbins <- floor(sqrt(length(actual)))
   }
   
   residual <- predicted - actual
-  support <- seq(0, 1, length.out = nbins + 1)
-  order <- quantile(predicted, support, names = FALSE)
-  order <- cut(predicted, breaks = unique(order), labels = FALSE)
   
-  res_mean <- aggregate(residual, by = list(order), FUN = mean)$x
-  pred_mean <- aggregate(predicted, by = list(order), FUN = mean)$x
-  length_bin <- aggregate(actual, by = list(order), FUN = length)$x
-  
-  res_sd <- aggregate(residual, by = list(order), FUN = sd)$x
-  res_se <- res_sd / sqrt(length_bin)
-  ellipse <- 1.96 * res_se
-  
-  pred_mean_order <- order(pred_mean)
-  pred_mean_sorted <- pred_mean[pred_mean_order]
-  length_bin_sorted <- length_bin[pred_mean_order]
-  
-  df <- data.frame(residuals = res_mean, predicted = pred_mean, start = cumsum(length_bin),
-                   ellipsex = pred_mean_sorted, ellipsey = ellipse[pred_mean_order])
-  
-  return(df)
-}
-
-bin.residuals.range <-  function(predicted, actual, nbins = NULL) {
-  if (is.null(nbins)) {
-    nbins <- floor(sqrt(length(actual)))
+  if (type == 'quantile') {
+    probs <- seq(0, 1, length.out = nbins + 1)
+    breaks <- unique(quantile(predicted, probs, names = FALSE))
+    if (length(breaks) <= 2) {
+      warning("Not enough unique quantile breaks; switching to equal-width bins.")
+      breaks <- seq(min(predicted), max(predicted), length.out = nbins + 1)
+    }
+  } else {
+    breaks <- seq(min(predicted), max(predicted), length.out = nbins + 1)
   }
   
-  residual <- predicted - actual
-  breaks <- seq(min(predicted), max(predicted), length.out = nbins + 1)
-  order <- cut(predicted, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+  bin_indices <- cut(predicted, breaks = breaks, include.lowest = TRUE, labels = FALSE)
   
-  res_mean <- aggregate(residual, by = list(order), FUN = mean)$x
-  pred_mean <- aggregate(predicted, by = list(order), FUN = mean)$x
-  length_bin <- aggregate(actual, by = list(order), FUN = length)$x
+  data <- data.frame(
+    residual = residual,
+    predicted = predicted,
+    bin = bin_indices
+  )
   
-  res_sd <- aggregate(residual, by = list(order), FUN = sd)$x
-  res_se <- res_sd / sqrt(length_bin)
-  ellipse <- 1.96 * res_se
-  
-  pred_mean_order <- order(pred_mean)
-  pred_mean_sorted <- pred_mean[pred_mean_order]
-  length_bin_sorted <- length_bin[pred_mean_order]
-  
-  df <- data.frame(residuals = res_mean, predicted = pred_mean, start = cumsum(length_bin),
-                   ellipsex = pred_mean_sorted, ellipsey = ellipse[pred_mean_order])
-  
-  return(df)
+  if (return_bin_indices) {
+    return(data.frame(bin = bin_indices))
+  } else {
+    res_mean <- aggregate(residual ~ bin, data, mean)$residual
+    pred_mean <- aggregate(predicted ~ bin, data, mean)$predicted
+    length_bin <- aggregate(residual ~ bin, data, length)$residual
+    res_sd <- aggregate(residual ~ bin, data, sd)$residual
+    
+    res_sd[is.na(res_sd)] <- 0
+    
+    res_se <- res_sd / sqrt(length_bin)
+    ellipse <- 1.96 * res_se
+    
+    df <- data.frame(
+      residuals = res_mean,
+      predicted = pred_mean,
+      count = length_bin,
+      ellipse = ellipse
+    )
+    
+    return(df)
+  }
 }
 
 
-aggregate_predictors <- function(predictors, name, source_table = 'presence'){
+
+aggregate.predictors.binomial <- function(response, predictors, name, source_table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
   predictors <- paste0(predictors, collapse = ", ")
   query <- paste0("
     CREATE TABLE ", name, " AS 
     SELECT ", predictors, ", 
            COUNT(*) as N,
-           SUM(permission_denied) as censored,
-           COUNT(*) - SUM(permission_denied) as not_censored,
-           SUM(permission_denied)/COUNT(*) as censored_proportion
+           SUM(",response,") as censored,
+           COUNT(*) - SUM(",response,") as not_censored,
+           SUM(",response,")/COUNT(*) as censored_proportion
+    FROM ",source_table,"
+    GROUP BY ", predictors)
+  
+  dbExecute(conn, query)
+  
+  cat('Table', name, 'made.\n')
+}
+
+aggregate.predictors.duplicates <- function(predictors, name, source_table = 'presence'){
+  dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
+  predictors <- paste0(predictors, collapse = ", ")
+  query <- paste0("
+    CREATE TABLE ", name, " AS 
+    SELECT ", predictors, ", 
+           COUNT(*) as N
     FROM ",source_table,"
     GROUP BY ", predictors)
   
@@ -330,6 +365,17 @@ bic <- function(model){
   tll <- 2 * as.numeric(logLik(model))
   bic <- log(n) * k - tll
   bic
+}
+
+aic <- function(model) {
+  if (is.null(model$coefficients)) {
+    return(Inf)
+  }
+  
+  k <- length(model$coefficients)
+  tll <- 2 * as.numeric(logLik(model))
+  aic <- 2 * k - tll
+  aic
 }
 
 ## THIS CORRECTS THE LOGLIKLIHOOD TO ACCOUNT FOR AGGREGATING
@@ -528,144 +574,195 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
   return(ans)
 }
 
-shglm_optimized <- function(formula, datafun, family = gaussian(), weights.fo = NULL, 
-                  start = NULL, etastart = NULL, mustart = NULL, offset = NULL, 
-                  maxit = 25, k = 2, chunksize = 5000, sparse = NULL, trace = FALSE, 
-                  all.levels = FALSE, set.default = list(), ...) {
+#######################################################
+
+library(rpart)
+
+rpart.sql <- function(formula, datafun, ...) {
+  datafun(TRUE)
+  models_list <- list()
+  i <- 0
   
-  # Input validation
-  if (!is.null(start) || !is.null(mustart) || !is.null(etastart)) {
-    stop("start, mustart, and etastart are not implemented yet")
+  dots <- list(...)
+  
+  while(TRUE) {
+    i <- i + 1
+    print(i)
+    row <- datafun()
+    if(is.null(row)) break
+    models_list[[i]] <- do.call(rpart, 
+                                c(list(formula = formula, 
+                                       data = row, 
+                                       model = FALSE, 
+                                       x = FALSE, 
+                                       y = FALSE),
+                                  dots))
   }
   
-  # Initialize data
-  dati <- datafun(reset = TRUE)
-  dati <- datafun(reset = FALSE)
-  on.exit(datafun(reset = TRUE), add = TRUE)  # Ensure datafun is reset on exit
+  return(models_list)
+}
+
+rpart.sql.predict <- function(models, newdata, type = "vector") {
+  predictions <- sapply(models, function(model) {
+    predict(model, newdata = newdata, type = type)
+  })
   
-  # Setup model components
-  tf <- terms(formula, data = dati)
-  M <- model.frame(tf, dati)
-  y <- M[[1]]
-  X <- model.matrix(tf, M)
-  offset <- model.offset(M)
+  target_var <- all.vars(models[[1]]$terms)[1]
   
-  # Initialize parameters
-  set <- list(sparselim = 0.9, camp = 0.01, eigendec = TRUE, 
-              row.chunk = NULL, tol.solve = .Machine$double.eps, acc = 1e-08, 
-              tol.values = 1e-07, tol.vectors = 1e-07, method = "eigen")
-  set[names(set.default)] <- set.default
+  if (is.factor(newdata[[target_var]]) || is.character(newdata[[target_var]])) {
+    avg_probs <- rowMeans(predictions)
+    predicted_class <- ifelse(avg_probs > 0.5, levels(newdata[[target_var]])[2], levels(newdata[[target_var]])[1])
+    return(factor(predicted_class, levels = levels(newdata[[target_var]])))
+  } else {
+    avg_prediction <- rowMeans(predictions)
+    return(as.vector(avg_prediction))
+  }
+}
+
+rpart.sql.predict.all <- function(models, datafun, type = "vector"){
+  datafun(TRUE)
+  v <- c()
   
-  # Initialize model objects
-  obj <- list(terms = tf)
-  if (!all.levels) {
-    fa <- which(attributes(attributes(M)$terms)$dataClasses == "factor")
-    if (length(fa) > 0) {
-      obj$levels <- lapply(M[fa], levels)
+  i <- 0
+  while(TRUE){
+    i <- i + 1
+    print(i)
+    row <- datafun()
+    if(is.null(row)) break
+    pred <- rpart.sql.predict(models,row,type=type)
+    v <- c(v, pred)
+  }
+  return(v)
+}
+
+rpart.sql.variable_importance <- function(models, data, target_var, metric = "accuracy") {
+  original_preds <- predict_ensemble(models, data)
+  
+  target_var <- all.vars(models[[1]]$terms)[1]
+  
+  if (is.factor(data[[target_var]])) {
+    original_perf <- mean(original_preds == data[[target_var]])
+  } else {
+    original_perf <- -mean((original_preds - data[[target_var]])^2)
+  }
+  
+  importance <- c()
+  predictors <- setdiff(names(data), target_var)
+  for (var in predictors) {
+    permuted_data <- data
+    permuted_data[[var]] <- sample(permuted_data[[var]])
+    permuted_preds <- predict_ensemble(models, permuted_data)
+    
+    
+    if (is.factor(data[[target_var]])) {
+      permuted_perf <- mean(permuted_preds == data[[target_var]])
+    } else {
+      permuted_perf <- -mean((permuted_preds - data[[target_var]])^2)
+    }
+    
+    importance[var] <- original_perf - permuted_perf
+  }
+  
+  importance <- sort(importance, decreasing = TRUE)
+  return(importance)
+}
+
+prune.serule <- function(model){
+  cp_table <- model$cptable
+  min_xerror_idx <- which.min(cp_table[, "xerror"])
+  min_xerror <- cp_table[min_xerror_idx, "xerror"]
+  se_xerror <- cp_table[min_xerror_idx, "xstd"]
+  
+  optimal_idx <- max(which(cp_table[, "xerror"] <= min_xerror + se_xerror))
+  optimal_cp <- cp_table[optimal_idx, "CP"]
+  
+  prune(model, cp = optimal_cp)
+}
+
+prune.cp <- function(model){
+  cp_table <- model$cptable
+  min_xerror_idx <- which.min(cp_table[, "xerror"])
+  optimal_cp <- cp_table[min_xerror_idx, "CP"]
+  
+  prune(model, cp = optimal_cp)
+}
+
+rpart.sql.extract_vars_depth <- function(models_list, prune=NULL) {
+  pruned_variables_list <- vector("list", length(models_list))
+  
+  for (i in seq_along(models_list)) {
+    model <- models_list[[i]]
+    if (is.null(prune)){
+      pruned_model <- model
+    } else if (prune == 'cp'){
+      pruned_model <- prune.cp(model)
+    } else if (prune == 'serule'){
+      pruned_model <- prune.serule(model)
+    }
+    
+    frame <- pruned_model$frame
+    vars_in_tree <- frame$var
+    node_numbers <- as.numeric(row.names(frame))
+    
+    splitting_nodes <- vars_in_tree != "<leaf>"
+    vars <- vars_in_tree[splitting_nodes]
+    nodes <- node_numbers[splitting_nodes]
+    
+    depth <- floor(log2(nodes))
+    vars_and_depths <- data.frame(variable=vars, depth=depth)
+    min_depths <- aggregate(depth ~ variable, data=vars_and_depths, FUN=min)
+    
+    pruned_variables_list[[i]] <- min_depths
+  }
+  
+  return(pruned_variables_list)
+}
+
+rpart.getimp <- function(tree_model) {
+  v <- tree_model$frame$var
+  v = unique(v[v != '<leaf>'])
+  vi = tree_model$variable.importance
+  vi = vi[attr(vi,'names') %in% v]
+  cumsum(vi/sum(vi))
+}
+
+rpart.get_leaf_variables <- function(tree) {
+  leaves <- as.numeric(row.names(tree$frame[tree$frame$var == "<leaf>", ]))
+  
+  paths <- path.rpart(tree, leaves, print.it = FALSE)
+  leaf_vars <- c()
+  
+  for (i in seq_along(paths)) {
+    path <- paths[[i]]
+    vars <- c()
+    
+    for (label in path[-1]) {
+      var <- strsplit(strsplit(label, "<")[[1]][1], ">")[[1]][1]
+      vars <- c(vars, var)
+    }
+    
+    leaf_vars <- c(leaf_vars, paste0(unique(vars), collapse = "*"))
+  }
+  
+  leaf_vars <- unique(leaf_vars)
+  
+  terms_vars <- strsplit(leaf_vars, "\\*")
+  keep <- rep(TRUE, length(leaf_vars))
+  
+  for (i in seq_along(terms_vars)) {
+    vars_i <- terms_vars[[i]]
+    for (j in seq_along(terms_vars)) {
+      if (i != j) {
+        vars_j <- terms_vars[[j]]
+        if (all(vars_i %in% vars_j)) {
+          keep[i] <- FALSE
+          break
+        }
+      }
     }
   }
   
-  # Initialize variables
-  nobs <- length(y)
-  weights <- if (is.null(weights.fo)) rep(1, nobs) else model.frame(weights.fo, dati)[[1]]
-  intercept <- attributes(tf)$intercept
-  nvar <- ncol(X)
-  offset <- if (is.null(offset)) rep.int(0, nobs) else offset
-  sparse <- if (is.null(sparse)) is.sparse(X, set$sparselim, set$camp) else sparse
+  leaf_vars <- leaf_vars[keep]
   
-  # Main iteration
-  iter <- 0
-  tol <- 1
-  dev <- nobs
-  weights.cum <- wt <- wy <- nulldev <- tot.obs <- zero.weights <- 0
-  block.cum <- nrow(X)
-  
-  while (tol > set$acc && iter < maxit) {
-    dev.prec <- dev
-    dev <- RSS <- 0
-    iter <- iter + 1
-    
-    # Use sparse matrices if appropriate
-    XTX <- if (sparse) Matrix(0, ncol(X), ncol(X)) else matrix(0, ncol(X), ncol(X))
-    XTz <- Matrix(0, ncol(X), 1)
-    
-    repeat {
-      if (iter > 1) {
-        eta <- offset + if (sparse) drop(X %*% start) else as.vector(X %*% start)
-        mu <- family$linkinv(eta)
-      } else {
-        mu <- family$linkinv(eta <- family$linkfun(y))
-      }
-      
-      # Calculate model components
-      dev <- dev + sum(family$dev.resids(y, mu, weights))
-      W <- weights * family$mu.eta(eta)^2 / family$variance(mu)
-      z <- (eta - offset) + (y - mu) / family$mu.eta(eta)
-      
-      # Update matrices
-      XTX <- XTX + if (sparse) t(X) %*% (X * W) else crossprod(X, X * W)
-      XTz <- XTz + if (sparse) t(X) %*% (W * z) else crossprod(X, W * z)
-      
-      # Update statistics
-      RSS <- RSS + sum(W * ((y - mu) / family$mu.eta(eta))^2)
-      if (iter == 1) {
-        weights.cum <- weights.cum + sum(weights == 0)
-        tot.obs <- tot.obs + nobs
-        wt <- wt + sum(weights)
-        wy <- wy + sum(weights * y)
-        zero.weights <- zero.weights + sum(weights == 0)
-        block.cum <- block.cum + nrow(X)
-      }
-      
-      # Get next chunk of data
-      dati <- datafun(reset = FALSE)
-      if (is.null(dati)) break
-      
-      # Process new chunk
-      M <- model.frame(tf, dati)
-      y <- M[[1]]
-      X <- model.matrix(tf, M)
-      offset <- model.offset(M) %||% rep.int(0, nrow(X))
-      weights <- if (is.null(weights.fo)) rep(1, nrow(X)) else model.frame(weights.fo, dati)[[1]]
-      nobs <- length(y)
-      
-      # Force garbage collection to free memory
-      gc()
-    }
-    
-    # Update coefficients
-    start_new <- solve(XTX, XTz, tol = set$tol.solve)
-    tol <- max(abs(start_new - start) / (abs(start) + 0.1))
-    start <- start_new
-    
-    # Force garbage collection
-    gc()
-  }
-  
-  # Finalize model
-  n.ok <- tot.obs - zero.weights
-  resdf <- n.ok - nvar
-  dispersion <- if (family$family %in% c("poisson", "binomial")) 1 else RSS / resdf
-  
-  # Create and return model object
-  rval <- list(
-    coefficients = start,
-    logLik = -dev / 2,
-    iter = iter,
-    tol = tol,
-    family = family,
-    df = resdf,
-    XTX = XTX,
-    dispersion = dispersion,
-    RSS = RSS,
-    deviance = dev,
-    nulldf = n.ok - as.integer(intercept),
-    ngoodobs = n.ok,
-    n = tot.obs,
-    intercept = intercept,
-    convergence = tol <= set$acc
-  )
-  
-  class(rval) <- "speedglm"
-  rval
+  return(leaf_vars)
 }

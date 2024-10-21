@@ -32,6 +32,10 @@ for(table in c('all_data','presence')){
                        family = binomial(link=link),
                        trace = TRUE)
 
+        
+        
+        attr(model, "terms") <- terms(form)
+        
         saveRDS(model, model_path)
         print(paste('finished:', model_path))
       }, error = function(e) {
