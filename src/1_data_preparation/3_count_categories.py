@@ -6,6 +6,8 @@ import multiprocessing as mp
 
 import liwc
 
+os.chdir("/mnt/working2/Thesis")
+
 def core(text, parse):
     text = str(text)
     counts = Counter()
@@ -16,7 +18,7 @@ def core(text, parse):
     return counts
 
 def count(file):
-    dictionary_path = os.path.join('dictionaries', 'LIWC2015 Dictionary - Chinese (Simplified)(adjusted).dic')
+    dictionary_path = os.path.join('data', 'dictionaries', 'LIWC2015 Dictionary - Chinese (Simplified)(adjusted).dic')
     parse, category_names = liwc.load_token_parser(dictionary_path)
     category_names.extend('tokencount')
 

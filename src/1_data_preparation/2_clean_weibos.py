@@ -7,6 +7,8 @@ import multiprocessing as mp
 import emoji
 import jieba
 
+os.chdir("/mnt/working2/Thesis")
+
 def core(path):
     clean_path = path.replace('unzipped', 'clean')
     with open(clean_path, 'w', newline='') as file:
@@ -62,4 +64,5 @@ def main():
 
     print((time.time()-t1)/60/60,"hours")
     
-main()
+if __name__ == '__main__':
+  main()

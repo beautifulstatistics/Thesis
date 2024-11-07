@@ -1,12 +1,12 @@
-setwd("~/Desktop/working8/Thesis")
+setwd("~/Desktop/working2/Thesis")
 source("./src/utils/helper_functions.R")
 source("./src/utils/binomial_corrected.R")
 
 connectdB()
 
 dbExecute(conn, "DROP TABLE IF EXISTS test_full")
-predictors = c('affect','functions','drives')
-da <- make.data('permission_denied',predictors,table='presence', limit = 10^6)
+predictors = c('affect','functions','drives','tokencount')
+da <- make.data('permission_denied',predictors,table='presence', limit = 1000)
 da(T)
 df = da(F)
 df$permission_denied = sample(c(0,1), nrow(df), replace=TRUE)

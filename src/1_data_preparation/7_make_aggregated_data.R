@@ -1,4 +1,4 @@
-setwd("~/Desktop/working8/Thesis")
+setwd("~/Desktop/working2/Thesis")
 source("./src/utils/helper_functions.R")
 library(RSQLite)
 
@@ -6,29 +6,16 @@ connectdB()
 
 response <- 'permission_denied'
 predictors <- models[['global']]
+table = 'presence'
 
-dbExecute(conn, "DROP TABLE IF EXISTS aggregated")
+aggregate.predictors.binomial(response,
+                              predictors,
+                              'aggregated_binomial',
+                              table)
 
-create_query <- "CREATE TABLE aggregated (
-    ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    N INTEGER"
-
-schema <- c(response,predictors)
-for (var in schema) {
-  create_query <- paste0(create_query, sprintf(", %s INTEGER", var))
-}
-create_query <- paste0(create_query, ")")
-dbExecute(conn, create_query)
-
-insert_query <- "INSERT INTO aggregated ("
-insert_query <- paste0(insert_query, paste0(schema, collapse = ", "), ", N)")
-insert_query <- paste0(insert_query,
-                       paste0(" SELECT ",
-                       paste0(schema,collapse = ', '),
-                       ", COUNT(*) AS N FROM presence GROUP BY ",
-                       paste0(schema,collapse = ', '), " ORDER BY RANDOM()"
-                       ))
-dbExecute(conn, insert_query)
+# aggregate.predictors.duplicates(c(response,predictors), 
+#                                 'aggregated', 
+#                                 table)
 
 disconnectdB()
 

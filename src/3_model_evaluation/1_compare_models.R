@@ -1,4 +1,4 @@
-setwd("~/Desktop/working8/Thesis")
+setwd("~/Desktop/working2/Thesis")
 source("./src/utils/helper_functions.R")
 
 clean <- function(path){
@@ -13,8 +13,8 @@ lla = list()
 llb = list()
 for (path in list.files("./models", full.names = TRUE, recursive = FALSE)) {
   name <- path
-  # if (grepl("residual|global_numeric_rpart|global_presence_rpart", name)) {
-  #   next
+  # if (grepl("global_", name)) {
+  #   break
   # }
   
   print(name)
@@ -31,13 +31,10 @@ for (path in list.files("./models", full.names = TRUE, recursive = FALSE)) {
   llb[[name]] <- bic(model)
 }
 
-ll <- lla
+ll <- llb
 ll <- unlist(ll)
 ll <- sort(ll - min(ll))
 ll
 
 top <- length(ll)
 paste0(top,' Models')
-
-
-# model <- readRDS('models/global_presence_logit.model')

@@ -10,8 +10,8 @@ validdB <- function(conn){
 }
 
 connectdB <- function(cache_size=48, memory_limit = 52, 
-                      temp_dir = '/mnt/working8/Thesis/tmp', 
-                      dbname="/mnt/working8/Thesis/data/counts.db"){
+                      temp_dir = "/mnt/working2/Thesis/tmp", 
+                      dbname="/mnt/working2/Thesis/data/counts.db"){
   result <<- NULL
   
   Sys.setenv(TMPDIR = temp_dir)
@@ -28,8 +28,8 @@ connectdB <- function(cache_size=48, memory_limit = 52,
     query <- paste0("PRAGMA memory_limit = ", memory_limit)
     dbExecute(conn, query)
     
-    # Force SQLite to use file-based temp storage
-    # dbExecute(conn, "PRAGMA temp_store = 2")
+    dbExecute(conn, "PRAGMA synchronous = OFF")
+    dbExecute(conn, "PRAGMA temp_store = MEMORY") 
   }
 }
 
@@ -310,17 +310,16 @@ bin.residuals <- function(predicted, actual, nbins = NULL, type = 'quantile', re
 
 
 
-aggregate.predictors.binomial <- function(response, predictors, name, source_table = 'presence'){
+aggregate.predictors.binomial <- function(response, predictors, name, table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
   predictors <- paste0(predictors, collapse = ", ")
   query <- paste0("
     CREATE TABLE ", name, " AS 
     SELECT ", predictors, ", 
            COUNT(*) as N,
-           SUM(",response,") as censored,
-           COUNT(*) - SUM(",response,") as not_censored,
-           SUM(",response,")/COUNT(*) as censored_proportion
-    FROM ",source_table,"
+           SUM(",response,") as positive,
+           COUNT(*) - SUM(",response,") as negative
+    FROM ",table,"
     GROUP BY ", predictors)
   
   dbExecute(conn, query)
@@ -328,14 +327,14 @@ aggregate.predictors.binomial <- function(response, predictors, name, source_tab
   cat('Table', name, 'made.\n')
 }
 
-aggregate.predictors.duplicates <- function(predictors, name, source_table = 'presence'){
+aggregate.predictors.duplicates <- function(predictors, name, table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
   predictors <- paste0(predictors, collapse = ", ")
   query <- paste0("
     CREATE TABLE ", name, " AS 
     SELECT ", predictors, ", 
            COUNT(*) as N
-    FROM ",source_table,"
+    FROM ",table,"
     GROUP BY ", predictors)
   
   dbExecute(conn, query)
@@ -576,193 +575,193 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 
 #######################################################
 
-library(rpart)
-
-rpart.sql <- function(formula, datafun, ...) {
-  datafun(TRUE)
-  models_list <- list()
-  i <- 0
-  
-  dots <- list(...)
-  
-  while(TRUE) {
-    i <- i + 1
-    print(i)
-    row <- datafun()
-    if(is.null(row)) break
-    models_list[[i]] <- do.call(rpart, 
-                                c(list(formula = formula, 
-                                       data = row, 
-                                       model = FALSE, 
-                                       x = FALSE, 
-                                       y = FALSE),
-                                  dots))
-  }
-  
-  return(models_list)
-}
-
-rpart.sql.predict <- function(models, newdata, type = "vector") {
-  predictions <- sapply(models, function(model) {
-    predict(model, newdata = newdata, type = type)
-  })
-  
-  target_var <- all.vars(models[[1]]$terms)[1]
-  
-  if (is.factor(newdata[[target_var]]) || is.character(newdata[[target_var]])) {
-    avg_probs <- rowMeans(predictions)
-    predicted_class <- ifelse(avg_probs > 0.5, levels(newdata[[target_var]])[2], levels(newdata[[target_var]])[1])
-    return(factor(predicted_class, levels = levels(newdata[[target_var]])))
-  } else {
-    avg_prediction <- rowMeans(predictions)
-    return(as.vector(avg_prediction))
-  }
-}
-
-rpart.sql.predict.all <- function(models, datafun, type = "vector"){
-  datafun(TRUE)
-  v <- c()
-  
-  i <- 0
-  while(TRUE){
-    i <- i + 1
-    print(i)
-    row <- datafun()
-    if(is.null(row)) break
-    pred <- rpart.sql.predict(models,row,type=type)
-    v <- c(v, pred)
-  }
-  return(v)
-}
-
-rpart.sql.variable_importance <- function(models, data, target_var, metric = "accuracy") {
-  original_preds <- predict_ensemble(models, data)
-  
-  target_var <- all.vars(models[[1]]$terms)[1]
-  
-  if (is.factor(data[[target_var]])) {
-    original_perf <- mean(original_preds == data[[target_var]])
-  } else {
-    original_perf <- -mean((original_preds - data[[target_var]])^2)
-  }
-  
-  importance <- c()
-  predictors <- setdiff(names(data), target_var)
-  for (var in predictors) {
-    permuted_data <- data
-    permuted_data[[var]] <- sample(permuted_data[[var]])
-    permuted_preds <- predict_ensemble(models, permuted_data)
-    
-    
-    if (is.factor(data[[target_var]])) {
-      permuted_perf <- mean(permuted_preds == data[[target_var]])
-    } else {
-      permuted_perf <- -mean((permuted_preds - data[[target_var]])^2)
-    }
-    
-    importance[var] <- original_perf - permuted_perf
-  }
-  
-  importance <- sort(importance, decreasing = TRUE)
-  return(importance)
-}
-
-prune.serule <- function(model){
-  cp_table <- model$cptable
-  min_xerror_idx <- which.min(cp_table[, "xerror"])
-  min_xerror <- cp_table[min_xerror_idx, "xerror"]
-  se_xerror <- cp_table[min_xerror_idx, "xstd"]
-  
-  optimal_idx <- max(which(cp_table[, "xerror"] <= min_xerror + se_xerror))
-  optimal_cp <- cp_table[optimal_idx, "CP"]
-  
-  prune(model, cp = optimal_cp)
-}
-
-prune.cp <- function(model){
-  cp_table <- model$cptable
-  min_xerror_idx <- which.min(cp_table[, "xerror"])
-  optimal_cp <- cp_table[min_xerror_idx, "CP"]
-  
-  prune(model, cp = optimal_cp)
-}
-
-rpart.sql.extract_vars_depth <- function(models_list, prune=NULL) {
-  pruned_variables_list <- vector("list", length(models_list))
-  
-  for (i in seq_along(models_list)) {
-    model <- models_list[[i]]
-    if (is.null(prune)){
-      pruned_model <- model
-    } else if (prune == 'cp'){
-      pruned_model <- prune.cp(model)
-    } else if (prune == 'serule'){
-      pruned_model <- prune.serule(model)
-    }
-    
-    frame <- pruned_model$frame
-    vars_in_tree <- frame$var
-    node_numbers <- as.numeric(row.names(frame))
-    
-    splitting_nodes <- vars_in_tree != "<leaf>"
-    vars <- vars_in_tree[splitting_nodes]
-    nodes <- node_numbers[splitting_nodes]
-    
-    depth <- floor(log2(nodes))
-    vars_and_depths <- data.frame(variable=vars, depth=depth)
-    min_depths <- aggregate(depth ~ variable, data=vars_and_depths, FUN=min)
-    
-    pruned_variables_list[[i]] <- min_depths
-  }
-  
-  return(pruned_variables_list)
-}
-
-rpart.getimp <- function(tree_model) {
-  v <- tree_model$frame$var
-  v = unique(v[v != '<leaf>'])
-  vi = tree_model$variable.importance
-  vi = vi[attr(vi,'names') %in% v]
-  cumsum(vi/sum(vi))
-}
-
-rpart.get_leaf_variables <- function(tree) {
-  leaves <- as.numeric(row.names(tree$frame[tree$frame$var == "<leaf>", ]))
-  
-  paths <- path.rpart(tree, leaves, print.it = FALSE)
-  leaf_vars <- c()
-  
-  for (i in seq_along(paths)) {
-    path <- paths[[i]]
-    vars <- c()
-    
-    for (label in path[-1]) {
-      var <- strsplit(strsplit(label, "<")[[1]][1], ">")[[1]][1]
-      vars <- c(vars, var)
-    }
-    
-    leaf_vars <- c(leaf_vars, paste0(unique(vars), collapse = "*"))
-  }
-  
-  leaf_vars <- unique(leaf_vars)
-  
-  terms_vars <- strsplit(leaf_vars, "\\*")
-  keep <- rep(TRUE, length(leaf_vars))
-  
-  for (i in seq_along(terms_vars)) {
-    vars_i <- terms_vars[[i]]
-    for (j in seq_along(terms_vars)) {
-      if (i != j) {
-        vars_j <- terms_vars[[j]]
-        if (all(vars_i %in% vars_j)) {
-          keep[i] <- FALSE
-          break
-        }
-      }
-    }
-  }
-  
-  leaf_vars <- leaf_vars[keep]
-  
-  return(leaf_vars)
-}
+# library(rpart)
+# 
+# rpart.sql <- function(formula, datafun, ...) {
+#   datafun(TRUE)
+#   models_list <- list()
+#   i <- 0
+#   
+#   dots <- list(...)
+#   
+#   while(TRUE) {
+#     i <- i + 1
+#     print(i)
+#     row <- datafun()
+#     if(is.null(row)) break
+#     models_list[[i]] <- do.call(rpart, 
+#                                 c(list(formula = formula, 
+#                                        data = row, 
+#                                        model = FALSE, 
+#                                        x = FALSE, 
+#                                        y = FALSE),
+#                                   dots))
+#   }
+#   
+#   return(models_list)
+# }
+# 
+# rpart.sql.predict <- function(models, newdata, type = "vector") {
+#   predictions <- sapply(models, function(model) {
+#     predict(model, newdata = newdata, type = type)
+#   })
+#   
+#   target_var <- all.vars(models[[1]]$terms)[1]
+#   
+#   if (is.factor(newdata[[target_var]]) || is.character(newdata[[target_var]])) {
+#     avg_probs <- rowMeans(predictions)
+#     predicted_class <- ifelse(avg_probs > 0.5, levels(newdata[[target_var]])[2], levels(newdata[[target_var]])[1])
+#     return(factor(predicted_class, levels = levels(newdata[[target_var]])))
+#   } else {
+#     avg_prediction <- rowMeans(predictions)
+#     return(as.vector(avg_prediction))
+#   }
+# }
+# 
+# rpart.sql.predict.all <- function(models, datafun, type = "vector"){
+#   datafun(TRUE)
+#   v <- c()
+#   
+#   i <- 0
+#   while(TRUE){
+#     i <- i + 1
+#     print(i)
+#     row <- datafun()
+#     if(is.null(row)) break
+#     pred <- rpart.sql.predict(models,row,type=type)
+#     v <- c(v, pred)
+#   }
+#   return(v)
+# }
+# 
+# rpart.sql.variable_importance <- function(models, data, target_var, metric = "accuracy") {
+#   original_preds <- predict_ensemble(models, data)
+#   
+#   target_var <- all.vars(models[[1]]$terms)[1]
+#   
+#   if (is.factor(data[[target_var]])) {
+#     original_perf <- mean(original_preds == data[[target_var]])
+#   } else {
+#     original_perf <- -mean((original_preds - data[[target_var]])^2)
+#   }
+#   
+#   importance <- c()
+#   predictors <- setdiff(names(data), target_var)
+#   for (var in predictors) {
+#     permuted_data <- data
+#     permuted_data[[var]] <- sample(permuted_data[[var]])
+#     permuted_preds <- predict_ensemble(models, permuted_data)
+#     
+#     
+#     if (is.factor(data[[target_var]])) {
+#       permuted_perf <- mean(permuted_preds == data[[target_var]])
+#     } else {
+#       permuted_perf <- -mean((permuted_preds - data[[target_var]])^2)
+#     }
+#     
+#     importance[var] <- original_perf - permuted_perf
+#   }
+#   
+#   importance <- sort(importance, decreasing = TRUE)
+#   return(importance)
+# }
+# 
+# prune.serule <- function(model){
+#   cp_table <- model$cptable
+#   min_xerror_idx <- which.min(cp_table[, "xerror"])
+#   min_xerror <- cp_table[min_xerror_idx, "xerror"]
+#   se_xerror <- cp_table[min_xerror_idx, "xstd"]
+#   
+#   optimal_idx <- max(which(cp_table[, "xerror"] <= min_xerror + se_xerror))
+#   optimal_cp <- cp_table[optimal_idx, "CP"]
+#   
+#   prune(model, cp = optimal_cp)
+# }
+# 
+# prune.cp <- function(model){
+#   cp_table <- model$cptable
+#   min_xerror_idx <- which.min(cp_table[, "xerror"])
+#   optimal_cp <- cp_table[min_xerror_idx, "CP"]
+#   
+#   prune(model, cp = optimal_cp)
+# }
+# 
+# rpart.sql.extract_vars_depth <- function(models_list, prune=NULL) {
+#   pruned_variables_list <- vector("list", length(models_list))
+#   
+#   for (i in seq_along(models_list)) {
+#     model <- models_list[[i]]
+#     if (is.null(prune)){
+#       pruned_model <- model
+#     } else if (prune == 'cp'){
+#       pruned_model <- prune.cp(model)
+#     } else if (prune == 'serule'){
+#       pruned_model <- prune.serule(model)
+#     }
+#     
+#     frame <- pruned_model$frame
+#     vars_in_tree <- frame$var
+#     node_numbers <- as.numeric(row.names(frame))
+#     
+#     splitting_nodes <- vars_in_tree != "<leaf>"
+#     vars <- vars_in_tree[splitting_nodes]
+#     nodes <- node_numbers[splitting_nodes]
+#     
+#     depth <- floor(log2(nodes))
+#     vars_and_depths <- data.frame(variable=vars, depth=depth)
+#     min_depths <- aggregate(depth ~ variable, data=vars_and_depths, FUN=min)
+#     
+#     pruned_variables_list[[i]] <- min_depths
+#   }
+#   
+#   return(pruned_variables_list)
+# }
+# 
+# rpart.getimp <- function(tree_model) {
+#   v <- tree_model$frame$var
+#   v = unique(v[v != '<leaf>'])
+#   vi = tree_model$variable.importance
+#   vi = vi[attr(vi,'names') %in% v]
+#   cumsum(vi/sum(vi))
+# }
+# 
+# rpart.get_leaf_variables <- function(tree) {
+#   leaves <- as.numeric(row.names(tree$frame[tree$frame$var == "<leaf>", ]))
+#   
+#   paths <- path.rpart(tree, leaves, print.it = FALSE)
+#   leaf_vars <- c()
+#   
+#   for (i in seq_along(paths)) {
+#     path <- paths[[i]]
+#     vars <- c()
+#     
+#     for (label in path[-1]) {
+#       var <- strsplit(strsplit(label, "<")[[1]][1], ">")[[1]][1]
+#       vars <- c(vars, var)
+#     }
+#     
+#     leaf_vars <- c(leaf_vars, paste0(unique(vars), collapse = "*"))
+#   }
+#   
+#   leaf_vars <- unique(leaf_vars)
+#   
+#   terms_vars <- strsplit(leaf_vars, "\\*")
+#   keep <- rep(TRUE, length(leaf_vars))
+#   
+#   for (i in seq_along(terms_vars)) {
+#     vars_i <- terms_vars[[i]]
+#     for (j in seq_along(terms_vars)) {
+#       if (i != j) {
+#         vars_j <- terms_vars[[j]]
+#         if (all(vars_i %in% vars_j)) {
+#           keep[i] <- FALSE
+#           break
+#         }
+#       }
+#     }
+#   }
+#   
+#   leaf_vars <- leaf_vars[keep]
+#   
+#   return(leaf_vars)
+# }
