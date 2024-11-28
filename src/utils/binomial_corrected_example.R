@@ -1,4 +1,4 @@
-setwd("~/Desktop/working2/Thesis")
+setwd("~/Desktop/workingfast/Thesis")
 source("./src/utils/helper_functions.R")
 source("./src/utils/binomial_corrected.R")
 

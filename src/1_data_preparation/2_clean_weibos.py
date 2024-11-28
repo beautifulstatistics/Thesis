@@ -7,7 +7,7 @@ import multiprocessing as mp
 import emoji
 import jieba
 
-os.chdir("/mnt/working2/Thesis")
+os.chdir("/mnt/workingfast/Thesis")
 
 def core(path):
     clean_path = path.replace('unzipped', 'clean')

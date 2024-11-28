@@ -1,8 +1,9 @@
-setwd("~/Desktop/working2/Thesis")
+setwd("~/Desktop/workingfast/Thesis")
 source("./src/utils/helper_functions.R")
 library(RSQLite)
 
-connectbB()
+connectdB()
+on.exit(disconnectdB())
 
 query <- "SELECT tokencount FROM all_data"
 data <- dbGetQuery(conn, query)
@@ -44,8 +45,6 @@ for (var in schema) {
 
 insert_query <- paste(insert_query, " permission_denied FROM all_data")
 dbExecute(conn, insert_query)
-
-disconnectdB()
 
 print('Table presence created')
 print('Finished')

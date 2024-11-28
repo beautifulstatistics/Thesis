@@ -6,7 +6,7 @@ import multiprocessing as mp
 
 import liwc
 
-os.chdir("/mnt/working2/Thesis")
+os.chdir("/mnt/workingfast/Thesis")
 
 def core(text, parse):
     text = str(text)

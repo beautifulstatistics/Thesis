@@ -28,7 +28,7 @@ build_query <- function(priors,cands,table){
   return(final_query)
 }
 
-setwd("~/Desktop/working2/Thesis")
+setwd("~/Desktop/workingfast/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()

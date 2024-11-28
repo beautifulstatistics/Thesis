@@ -5,7 +5,7 @@ import sqlite3
 import csv
 import glob
 
-os.chdir("/mnt/working2/Thesis")
+os.chdir("/mnt/workingfast/Thesis")
 
 path = os.path.join('data','counts','week36.csv')
 

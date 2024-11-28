@@ -10,7 +10,7 @@
 
 
 # Load the model and data (assuming they're saved as in 2_compute_residuals.R)
-setwd("~/Desktop/working2/Thesis")
+setwd("~/Desktop/workingfast/Thesis")
 source("./src/utils/helper_functions.R")
 connectbB()
 
