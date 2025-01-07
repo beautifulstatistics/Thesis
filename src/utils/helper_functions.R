@@ -316,9 +316,8 @@ aggregate.predictors.binomial <- function(response, predictors, name, table = 'p
   query <- paste0("
     CREATE TABLE ", name, " AS 
     SELECT ", predictors, ", 
-           COUNT(*) as N,
-           SUM(",response,") as positive,
-           COUNT(*) - SUM(",response,") as negative
+           COUNT(*) as TOTAL,
+           SUM(",response,") as POSITIVE
     FROM ",table,"
     GROUP BY ", predictors)
   
@@ -333,7 +332,7 @@ aggregate.predictors.duplicates <- function(predictors, name, table = 'presence'
   query <- paste0("
     CREATE TABLE ", name, " AS 
     SELECT ", predictors, ", 
-           COUNT(*) as N
+           COUNT(*) as TOTAL
     FROM ",table,"
     GROUP BY ", predictors)
   
@@ -765,3 +764,65 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 #   
 #   return(leaf_vars)
 # }
+
+########################
+# build_query <- function(preds, path = character()) {
+#   # Build the subset CTE
+#   query1 <- paste0(
+#     "\nWITH\n",
+#     "subset AS (SELECT ", paste0(preds, collapse = ', '), ", POSITIVE, TOTAL FROM ", table)
+# 
+#   # Add WHERE clause if path conditions exist
+#   if (length(path) > 0) {
+#     query1 <- paste0(query1, " WHERE ", paste0(path, collapse = ' AND '))
+#   }
+# 
+#   query1 <- paste0(query1, "),\n\n")
+# 
+#   # Build individual CTEs for each predictor
+#   query2 <- paste0(
+#     preds, " AS (SELECT '", preds, "' AS name, ",
+#     preds, " as child, SUM(POSITIVE) AS count, SUM(TOTAL) as total FROM subset GROUP BY ",
+#     preds, ")",
+#     collapse = ',\n'
+#   )
+# 
+#   # Combine all parts and add UNION ALL
+#   query <- paste0(query1, query2, '\n\n')
+#   final_query <- paste0(query, paste0("SELECT * FROM ", preds, collapse = "\nUNION ALL\n"))
+# 
+#   return(final_query)
+# }
+# 
+# calculate_deviance <- function(counts, totals) {
+#   overall_p <- sum(counts) / sum(totals)
+# 
+#   expected <- totals * overall_p
+# 
+#   observed_pos <- counts
+#   observed_neg <- totals - counts
+#   expected_pos <- expected
+#   expected_neg <- totals - expected
+# 
+#   dev_pos <- 2 * observed_pos * log(ifelse(observed_pos == 0, 1, observed_pos/expected_pos))
+#   dev_neg <- 2 * observed_neg * log(ifelse(observed_neg == 0, 1, observed_neg/expected_neg))
+# 
+#   sum(dev_pos + dev_neg)
+# }
+# 
+# calculate_predictor_deviance <- function(df) {
+#   result <- do.call(rbind, by(df, df$name, function(pred_df) {
+#     dev <- calculate_deviance(counts=pred_df$count, total=pred_df$total)
+#     data.frame(
+#       pred = pred_df$name[1],
+#       deviance = dev,
+#       stringsAsFactors = FALSE
+#     )
+#   }))
+# 
+#   result$rank <- rank(-result$deviance)
+#   result <- result[order(-result$deviance), ]
+#   rownames(result) <- NULL
+#   return(result)
+# }
+##############
