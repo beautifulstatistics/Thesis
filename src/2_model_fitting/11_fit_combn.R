@@ -85,7 +85,7 @@ combn_query <- function(predictors, table, combinations, batch_size = 500) {
 }
 
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()
@@ -191,7 +191,7 @@ combn_query <- function(predictors, table, combinations, batch_size = 500) {
 }
 
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()

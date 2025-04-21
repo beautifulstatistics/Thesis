@@ -412,7 +412,7 @@ rpart.sql <- function(response, predictors, table, p_value, ...) {
 }
 
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()

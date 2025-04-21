@@ -1,4 +1,4 @@
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("5_helper_functions.R")
 library(ggplot2)
 

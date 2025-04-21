@@ -185,7 +185,7 @@ bnetwork <- function(predictors, table, batch_size = 500, significance = 0.05, m
   ))
 }
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()

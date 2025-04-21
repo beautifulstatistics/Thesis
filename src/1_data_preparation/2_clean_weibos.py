@@ -7,7 +7,7 @@ import multiprocessing as mp
 import emoji
 import jieba
 
-os.chdir("/mnt/workingfast/Thesis")
+os.chdir("/home/kenneywl/Desktop/Thesis")
 
 def core(path):
     clean_path = path.replace('unzipped', 'clean')
@@ -57,7 +57,7 @@ def main():
     filel = len(part_paths)
     
     t1 = time.time()
-    with mp.Pool(processes=4) as pool:
+    with mp.Pool(processes=8) as pool:
         for index, malformed in enumerate(pool.imap_unordered(core, part_paths)):
             print(f'{(index+1)/filel*100:.2f}% Complete.', end=": ")
             print(f'{(time.time()-t1)/(index+1)/60/60*(filel - index - 1):.2f} hours left. Rows malformed:', malformed, flush=True)

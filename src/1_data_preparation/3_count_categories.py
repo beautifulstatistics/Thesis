@@ -6,7 +6,7 @@ import multiprocessing as mp
 
 import liwc
 
-os.chdir("/mnt/workingfast/Thesis")
+os.chdir("/home/kenneywl/Desktop/Thesis")
 
 def core(text, parse):
     text = str(text)
@@ -20,7 +20,7 @@ def core(text, parse):
 def count(file):
     dictionary_path = os.path.join('data', 'dictionaries', 'LIWC2015 Dictionary - Chinese (Simplified)(adjusted).dic')
     parse, category_names = liwc.load_token_parser(dictionary_path)
-    category_names.extend('tokencount')
+    category_names.append('tokencount')
 
     csv_path = file.replace('clean','counts')
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     filel = len(files)
 
     t1 = time.time()
-    with mp.Pool(processes=7) as pool:
+    with mp.Pool(processes=10) as pool:
         for index, _ in enumerate(pool.imap_unordered(count, files)):
             elapsed_time = (time.time() - t1) / (index + 1) / 60 / 60 * (filel - index - 1)
             print(f'{(index+1)/filel*100:.2f}% Complete: {elapsed_time:.2f} hours left', flush=True)

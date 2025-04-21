@@ -68,7 +68,7 @@ validate_make_data <- function(data_func, response, predictors, max_chunks = Inf
   )
 }
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 time()
 
@@ -99,7 +99,7 @@ disconnectdB()
 
 ##################
 
-# setwd("~/Desktop/workingfast/Thesis")
+# setwd("/home/kenneywl/Desktop/Thesis")
 # source("./src/utils/helper_functions.R")
 # time()
 # 

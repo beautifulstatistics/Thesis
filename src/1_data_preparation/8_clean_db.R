@@ -1,4 +1,4 @@
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()
@@ -6,8 +6,8 @@ connectdB()
 print('Begining ANALYZE')
 dbExecute(conn, "ANALYZE")
 
-print('Begining VACUUM')
-dbExecute(conn, "VACUUM")
+# print('Begining VACUUM') # Causes errors
+# dbExecute(conn, "VACUUM")
 
 print("Finished")
 disconnectdB()

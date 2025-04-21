@@ -24,7 +24,7 @@
 # }
 # 
 # 
-# setwd("~/Desktop/workingfast/Thesis")
+# setwd("/home/kenneywl/Desktop/Thesis")
 # source("./src/utils/helper_functions.R")
 # 
 # connectdB()
@@ -64,7 +64,7 @@
 #   st[[na]] = stat$p_value
 # }
 
-setwd("~/Desktop/workingfast/Thesis")
+setwd("/home/kenneywl/Desktop/Thesis")
 source("./src/utils/helper_functions.R")
 
 connectdB()

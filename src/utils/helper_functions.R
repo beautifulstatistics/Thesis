@@ -9,9 +9,9 @@ validdB <- function(conn){
   })
 }
 
-connectdB <- function(cache_size=36, memory_limit = 48, 
-                      temp_dir = "/mnt/workingfast/Thesis/tmp", 
-                      dbname="/mnt/workingfast/Thesis/data/counts.db"){
+connectdB <- function(cache_size=64, memory_limit = 64, 
+                      temp_dir = "/home/kenneywl/Desktop/Thesis/tmp", 
+                      dbname="/home/kenneywl/Desktop/Thesis/data/counts.db"){
   result <<- NULL
   
   Sys.setenv(TMPDIR = temp_dir)
