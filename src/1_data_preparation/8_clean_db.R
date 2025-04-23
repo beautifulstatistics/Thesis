@@ -6,8 +6,5 @@ connectdB()
 print('Begining ANALYZE')
 dbExecute(conn, "ANALYZE")
 
-# print('Begining VACUUM') # Causes errors
-# dbExecute(conn, "VACUUM")
-
 print("Finished")
 disconnectdB()
