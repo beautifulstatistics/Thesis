@@ -5,8 +5,6 @@ import sqlite3
 import csv
 import glob
 
-os.chdir("/home/kenneywl/Desktop/Thesis")
-
 path = os.path.join('data','counts','week36.csv')
 
 with open(path, 'r') as f:
@@ -20,6 +18,16 @@ path = os.path.join('data','counts.db')
 conn = sqlite3.connect(path)
 cursor = conn.cursor()
 
+# Optimize SQLite for bulk insert with 81GB RAM available
+cursor.execute("PRAGMA cache_size = -67108864")  # 64GB cache in KB
+cursor.execute("PRAGMA mmap_size = 68719476736")  # 64GB memory-mapped I/O
+cursor.execute("PRAGMA synchronous = OFF")
+cursor.execute("PRAGMA journal_mode = WAL")
+cursor.execute("PRAGMA temp_store = MEMORY")
+cursor.execute("PRAGMA page_size = 4096")
+
+cursor.execute("DROP TABLE IF EXISTS all_data")
+
 columns_str = 'week INTEGER, ' + ", ".join([f"{column} {'TEXT' if column in ['text', 'text_raw'] else 'INTEGER'}" for column in columns])
 cursor.execute(f"CREATE TABLE IF NOT EXISTS all_data ({columns_str})")
 
@@ -30,13 +38,14 @@ placeholders = ', '.join('?' * (len(columns) + 1))
 
 t1 = time.time()
 for index, filename in enumerate(csv_files):
+    print(filename)
     with open(filename, 'r') as f:
         dr = csv.DictReader(f)
         fname = os.path.basename(filename)
         week = str(fname[4:].split('.')[0])
         to_db = [[week] + [i[column] for column in columns] for i in dr]
 
-    cursor.executemany(f"INSERT INTO all_data ({columns_str}) VALUES ({placeholders})", to_db)
+        cursor.executemany(f"INSERT INTO all_data ({columns_str}) VALUES ({placeholders})", to_db)
     
     print(f'{(index+1)/52*100:.2f}% Complete',end=": ")
     print(f'{(time.time()-t1)/(index+1)/60/60*(52 - index - 1):.2f} hours left', flush=True)

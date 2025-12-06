@@ -1,15 +1,21 @@
 
 # .gitignore
 
-.ipynb_checkpoints/
-__pycache__/
-data/
+**.ipynb_checkpoints/
+**__pycache__/
+**data/
 models/
 logs/
-archived/
-archive/
+**archived/
+**archive/
 words/
 texts/
 plots/
+models/
+tmp/
+.claude/
+artifacts/
+summary/
+project/
 
 runner.out

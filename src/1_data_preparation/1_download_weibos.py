@@ -4,8 +4,6 @@ import requests
 import zipfile
 from tqdm import tqdm
 
-os.chdir("/home/kenneywl/Desktop/Thesis")
-
 def download_raw():
     chunk_size=1024
 

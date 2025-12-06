@@ -1,5 +1,6 @@
 library(RSQLite)
 library(speedglm)
+library(rpart)
 
 validdB <- function(conn){
   tryCatch({
@@ -9,27 +10,42 @@ validdB <- function(conn){
   })
 }
 
-connectdB <- function(cache_size=64, memory_limit = 64, 
-                      temp_dir = "/home/kenneywl/Desktop/Thesis/tmp", 
-                      dbname="/home/kenneywl/Desktop/Thesis/data/counts.db"){
+connectdB <- function(cache_size_gb=64, memory_limit_gb = 70,
+                      temp_dir = "tmp",
+                      dbname="data/counts.db"){
+  # Optimized for system with 94GB RAM (~81GB available)
+  # cache_size_gb: SQLite page cache in GB (each page is 4096 bytes)
+  # memory_limit_gb: SQLite memory limit in GB
   result <<- NULL
-  
+
+  if (!dir.exists(temp_dir)) {
+    dir.create(temp_dir, recursive = TRUE)
+  }
+
   Sys.setenv(TMPDIR = temp_dir)
   Sys.setenv(SQLITE_TMPDIR = temp_dir)
-  
+
   if(!validdB(conn)){
     conn <<- dbConnect(SQLite(), dbname=dbname)
-    
-    cache_size <- cache_size * (1024^3) / 4096
-    query <- paste0("PRAGMA cache_size = ", cache_size)
+
+    # Convert GB to number of 4096-byte pages (negative value = KB in SQLite)
+    # Using negative value in KB for more precise control
+    cache_size_kb <- cache_size_gb * 1024 * 1024  # GB to KB
+    query <- paste0("PRAGMA cache_size = -", cache_size_kb)
     dbExecute(conn, query)
-    
-    memory_limit <- memory_limit * 1024^3
-    query <- paste0("PRAGMA memory_limit = ", memory_limit)
+
+    # Memory limit in bytes
+    memory_limit_bytes <- memory_limit_gb * 1024^3
+    query <- paste0("PRAGMA soft_heap_limit = ", memory_limit_bytes)
     dbExecute(conn, query)
-    
+
+    # Performance optimizations
     dbExecute(conn, "PRAGMA synchronous = OFF")
-    dbExecute(conn, "PRAGMA temp_store = MEMORY") 
+    dbExecute(conn, "PRAGMA temp_store = MEMORY")
+    dbExecute(conn, "PRAGMA journal_mode = WAL")
+    dbExecute(conn, "PRAGMA mmap_size = 68719476736")  # 64GB memory-mapped I/O
+    dbExecute(conn, "PRAGMA page_size = 4096")
+    dbExecute(conn, "PRAGMA threads = 4")  # SQLite threading
   }
 }
 
@@ -152,9 +168,9 @@ format_time <- function(seconds) {
 
 vif <- function(predictors, table, limit = NULL){
   
-  dir.create('evaluation', showWarnings = FALSE)
+  dir.create('artifacts', showWarnings = FALSE)
   
-  checkpoint_file = file.path("evaluation","vif_checkpoint.rds")
+  checkpoint_file = file.path("artifacts","vif_checkpoint.rds")
   
   if(file.exists(checkpoint_file)){
     checkpoint <- readRDS(checkpoint_file)
@@ -199,17 +215,25 @@ vif <- function(predictors, table, limit = NULL){
   sort(vifs, decreasing = TRUE)
 }
 
-shlm <- function(form, datafun){
+shlm <- function(form, datafun, family = gaussian()){
   datafun(TRUE)
-  da2 = datafun()
-  
-  lm1 <- speedlm(form, data = da2)
-  
+  da2 <- datafun()
+
+  # Store in global env so update() can find them
+  .shlm_formula <<- form
+  .shlm_data <<- da2
+  lm1 <- speedglm(.shlm_formula, data = .shlm_data, family = family)
+
+  # Fetch next chunk
+  da2 <- datafun()
+
+  # Process remaining chunks if any
   while(!is.null(da2)){
-    lm1 <- update(lm1, data = da2, add = TRUE)
+    .shlm_data <<- da2
+    lm1 <- update(lm1, data = .shlm_data, add = TRUE)
     da2 <- datafun()
   }
-  
+
   return(lm1)
 }
 
@@ -308,8 +332,6 @@ bin.residuals <- function(predicted, actual, nbins = NULL, type = 'quantile', re
   }
 }
 
-
-
 aggregate.predictors.binomial <- function(response, predictors, name, table = 'presence'){
   dbExecute(conn, paste0("DROP TABLE IF EXISTS ", name))
   predictors <- paste0(predictors, collapse = ", ")
@@ -341,18 +363,6 @@ aggregate.predictors.duplicates <- function(predictors, name, table = 'presence'
   cat('Table', name, 'made.\n')
 }
 
-os_walk <- function(path) {
-  walk_recursive <- function(dir) {
-    files <- list.files(dir, full.names = TRUE, recursive = FALSE)
-    dirs <- files[file.info(files)$isdir]
-    
-    file_paths <- files[!files %in% dirs]
-    file_paths
-  }
-  
-  walk_recursive(path)
-}
-
 bic <- function(model){
   if (is.null(model$coefficients)) {
     return(Inf)
@@ -376,6 +386,72 @@ aic <- function(model) {
   aic
 }
 
+get_sigpreds <- function(model) {
+  coefs <- summary(model)$coefficients
+  terms <- rownames(coefs)
+
+  sig_terms_idx <- which(coefs[, 4] <= 0.05)
+  
+  # If no significant terms, return empty data frames
+  if (length(sig_terms_idx) == 0) {
+    empty_df <- data.frame(term = character(0), estimate = numeric(0), p_value = numeric(0))
+    return(list(more_likely = empty_df, less_likely = empty_df))
+  }
+  
+  sig_terms <- terms[sig_terms_idx]
+  sig_coefs <- coefs[sig_terms_idx, , drop = FALSE]
+
+  split_terms <- strsplit(sig_terms, ":")
+  term_sets <- lapply(split_terms, sort)
+
+  df_terms <- data.frame(
+    term = sig_terms,
+    estimate = sig_coefs[, 1],
+    p_value = sig_coefs[, 4],
+    varlist = I(term_sets),
+    order = lengths(term_sets),
+    stringsAsFactors = FALSE
+  )
+
+  df_terms <- df_terms[order(-df_terms$order), ]
+
+  # Handle filtering of redundant terms only if we have more than one term
+  keep <- rep(TRUE, nrow(df_terms))
+  if (nrow(df_terms) > 1) {
+    for (i in seq_len(nrow(df_terms))) {
+      if (!keep[i]) next
+      current_vars <- df_terms$varlist[[i]]
+      # Only execute the inner loop if there are rows after i
+      if (i < nrow(df_terms)) {
+        for (j in (i+1):nrow(df_terms)) {
+          if (keep[j]) {
+            if (all(df_terms$varlist[[j]] %in% current_vars)) {
+              keep[j] <- FALSE
+            }
+          }
+        }
+      }
+    }
+  }
+
+  terms <- c("term", "estimate", "p_value")
+  final_df <- df_terms[keep, terms]
+  
+  # Create positive and negative dataframes
+  positive <- final_df[final_df$estimate > 0, ]
+  if (nrow(positive) > 0) {
+    positive <- positive[order(positive$estimate, decreasing = TRUE), ]
+  }
+  
+  negative <- final_df[final_df$estimate < 0, ]
+  if (nrow(negative) > 0) {
+    negative <- negative[order(negative$estimate, decreasing = FALSE), ]
+  }
+  
+  list(more_likely = positive, less_likely = negative)
+}
+
+
 ## THIS CORRECTS THE LOGLIKLIHOOD TO ACCOUNT FOR AGGREGATING
 
 loglike_corrected <- function (y, n, mu, wt, dev) 
@@ -387,13 +463,17 @@ loglike_corrected <- function (y, n, mu, wt, dev)
                                              round(m), mu, log = TRUE) - correction)
 }
 
+binomial_corrected = binomial()
+binomial_corrected$aic = loglike_corrected
+
+# Quasibinomial with corrected AIC (for overdispersed data)
+quasibinomial_corrected = quasibinomial()
+quasibinomial_corrected$aic = loglike_corrected
+
 dev.residual_corrected = function (y, mu, wt){
   wt <- wt[1:2]
   binomial()$dev.resids(y, mu, wt)
 }
-
-binomial_corrected = binomial()
-binomial_corrected$aic = loglike_corrected
 
 QAIC <- function(model){
   ll <- logLik(model)
@@ -455,51 +535,6 @@ create_mock_model <- function(predictors, form, link) {
   
   return(mock_model)
 }
-
-### MODELS
-
-models = list(
-  highest = c('functions', 'othergram', 'social', 'percept', 'persconc',
-              'drives', 'affect', 'cogproc', 'bio', 'relativ', 'informal'),
-  
-  functions = c('pronoun','prep','auxverb','adverb','conj','negate',
-                'quanunit','prepend','specart','tensem','particle'),
-  functions_pronoun = c('ppron','ipron'),
-  functions_pronoun_ppron = c('i','we','you','shehe','they','youpl'),
-  functions_tensem = c('focuspast','focusfuture','progm'),
-  functions_particle = c('modal_pa','general_pa'),
-  
-  othergram = c('compare','interrog','number','quant'),
-  social = c('family','friend','female','male'),
-  percept = c('see','hear','feel'),
-  drives = c('affiliation','achieve','power','reward','risk'),
-  persconc = c('work','leisure','home','money','relig','death'),
-  
-  affect = c('posemo','negemo'),
-  affect_negemo = c('anx','anger','sad'),
-  
-  cogproc = c('insight','cause','discrep','tentat','certain','differ'),
-  bio = c('body','health','sexual','ingest'),
-  relative = c('motion','space','time'),
-  informal = c('swear','netspeak','assent','nonflu','filler'),
-  
-  collective_action = c('ppron','focuspresent','focusfuture','drives','motion','space','time'),
-  
-  lowest = c('i','we','you','shehe','they','youpl','ipron','prep','auxverb',
-    'adverb','conj','negate','quanunit','prepend','specart','focuspast',
-    'focuspresent','focusfuture','progm','modal_pa','general_pa','compare',
-    'interrog','number','quant','posemo','anx','anger','sad','family',
-    'friend','female','male','insight','cause','discrep','tentat','certain',
-    'differ','see','hear','feel','body','health','sexual','ingest','affiliation',
-    'achieve','power','reward','risk','motion','space','time','work','leisure',
-    'home','money','relig','death','swear','netspeak','assent','nonflu','filler')
-)
-
-for(name in names(models)){
-  models[[name]] <- c('tokencount','image', models[[name]])
-}
-
-models[['global']] <- unique(unlist(models))
 
 ##################################
 
@@ -573,16 +608,262 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 }
 
 #######################################################
+# rpart
+#######################################################
+
+prune.serule <- function(model){
+  cp_table <- model$cptable
+  min_xerror_idx <- which.min(cp_table[, "xerror"])
+  min_xerror <- cp_table[min_xerror_idx, "xerror"]
+  se_xerror <- cp_table[min_xerror_idx, "xstd"]
+  
+  optimal_idx <- max(which(cp_table[, "xerror"] <= min_xerror + se_xerror))
+  optimal_cp <- cp_table[optimal_idx, "CP"]
+  
+  prune(model, cp = optimal_cp)
+}
+
+prune.cp <- function(model){
+  cp_table <- model$cptable
+  min_xerror_idx <- which.min(cp_table[, "xerror"])
+  optimal_cp <- cp_table[min_xerror_idx, "CP"]
+  
+  prune(model, cp = optimal_cp)
+}
+
+rpart.getimp <- function(tree) {
+  v <- tree$frame$var
+  v = unique(v[v != '<leaf>'])
+  vi = tree$variable.importance
+  vi = vi[attr(vi,'names') %in% v]
+  cumsum(vi/sum(vi))
+}
+
+rpart.get_leaf_variables <- function(tree, interaction="*", avges=FALSE) {
+  leaves <- as.numeric(row.names(tree$frame[tree$frame$var == "<leaf>", ]))
+  paths <- path.rpart(tree, leaves, print.it = FALSE)
+
+  result_df <- data.frame(
+    leaf_id = leaves,
+    path_vars = character(length(leaves)),
+    count = numeric(length(leaves)),
+    prob = numeric(length(leaves)),
+    prediction = numeric(length(leaves)),
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_along(paths)) {
+    path <- paths[[i]]
+    vars <- c()
+    
+    for (label in path[-1]) {
+      var <- strsplit(strsplit(label, "<")[[1]][1], ">")[[1]][1]
+      vars <- c(vars, var)
+    }
+
+    result_df$path_vars[i] <- paste0(unique(vars), collapse = interaction)
+    leaf_index <- which(as.numeric(row.names(tree$frame)) == leaves[i])
+    result_df$count[i] <- tree$frame$n[leaf_index]
+    
+    if (!is.null(tree$frame$yval2)) {
+      pred_class <- which.max(tree$frame$yval2[leaf_index, -1])
+      result_df$prob[i] <- tree$frame$yval2[leaf_index, pred_class + 1]
+      result_df$prediction[i] <- tree$frame$yval[leaf_index]
+    } else {
+      result_df$prediction[i] <- tree$frame$yval[leaf_index]
+      result_df$prob[i] <- NA
+    }
+  }
+
+  path_ids <- unique(result_df$path_vars)
+
+  if (avges) {
+    final_result <- data.frame(
+      path_vars = character(length(path_ids)),
+      total_count = numeric(length(path_ids)),
+      avg_prob = numeric(length(path_ids)),
+      weighted_prediction = numeric(length(path_ids)),
+      stringsAsFactors = FALSE
+    )
+    
+    for (i in seq_along(path_ids)) {
+      path_rows <- result_df$path_vars == path_ids[i]
+      final_result$path_vars[i] <- path_ids[i]
+      final_result$total_count[i] <- sum(result_df$count[path_rows])
+      
+      if (any(!is.na(result_df$prob[path_rows]))) {
+        final_result$avg_prob[i] <- weighted.mean(result_df$prob[path_rows], 
+                                                  result_df$count[path_rows])
+      } else {
+        final_result$avg_prob[i] <- NA
+      }
+      
+      final_result$weighted_prediction[i] <- weighted.mean(result_df$prediction[path_rows], 
+                                                           result_df$count[path_rows])
+    }
+  } else {
+    final_result <- data.frame(
+      path_vars = character(length(path_ids)),
+      total_count = numeric(length(path_ids)),
+      stringsAsFactors = FALSE
+    )
+    
+    for (i in seq_along(path_ids)) {
+      path_rows <- result_df$path_vars == path_ids[i]
+      final_result$path_vars[i] <- path_ids[i]
+      final_result$total_count[i] <- sum(result_df$count[path_rows])
+    }
+  }
+  
+  terms_vars <- strsplit(final_result$path_vars, "\\*")
+  keep <- rep(TRUE, length(final_result$path_vars))
+  
+  for (i in seq_along(terms_vars)) {
+    vars_i <- terms_vars[[i]]
+    for (j in seq_along(terms_vars)) {
+      if (i != j) {
+        vars_j <- terms_vars[[j]]
+        if (all(vars_i %in% vars_j)) {
+          keep[i] <- FALSE
+          break
+        }
+      }
+    }
+  }
+  
+  final_result <- final_result[keep, ]
+  return(final_result)
+}
+
+rf.get_leaf_variables <- function(tree, varnames, interaction = "*", avges = FALSE) {
+  tree <- as.data.frame(tree)
+  max_node <- nrow(tree)
+  
+  # Collect all paths to terminal nodes
+  paths <- list()
+  predictions <- c()
+  counts <- c()
+  
+  traverse <- function(node_id, path_vars) {
+    if (node_id > max_node) return(NULL)
+    node <- tree[node_id, , drop = FALSE]
+    
+    if (node[["split var"]] == 0) {
+      paths[[length(paths) + 1]] <<- path_vars
+      predictions <<- c(predictions, node[["prediction"]])
+      counts <<- c(counts, 1)
+      return()
+    }
+    
+    split_var_name <- varnames[node[["split var"]]]
+    left <- node[["left daughter"]]
+    right <- node[["right daughter"]]
+    
+    traverse(left, c(path_vars, split_var_name))
+    traverse(right, c(path_vars, split_var_name))
+  }
+  
+  traverse(1, character(0))
+  
+  df <- data.frame(
+    path_vars = sapply(paths, function(p) paste(unique(p), collapse = interaction)),
+    prediction = predictions,
+    count = counts,
+    stringsAsFactors = FALSE
+  )
+  
+  # Aggregate results
+  if (avges) {
+    agg <- aggregate(cbind(count, prediction) ~ path_vars, data = df, FUN = function(x) {
+      c(sum = sum(x), wmean = weighted.mean(x, df$count[df$path_vars == df$path_vars[match(x, df$prediction)]]))
+    })
+    
+    out <- data.frame(
+      path_vars = agg$path_vars,
+      total_count = sapply(agg$prediction, function(x) x[1]),
+      weighted_prediction = sapply(agg$prediction, function(x) x[2])
+    )
+  } else {
+    out <- aggregate(count ~ path_vars, data = df, sum)
+    colnames(out) <- c("path_vars", "total_count")
+  }
+  
+  # Prune redundant paths (subset removal)
+  # Split and sort by path length
+  split_paths <- strsplit(out$path_vars, paste0("\\", interaction))
+  path_lengths <- sapply(split_paths, length)
+  order_idx <- order(path_lengths)  # shortest first
+  
+  n_paths <- length(split_paths)
+  keep <- rep(TRUE, n_paths)
+  
+  for (ii in seq_len(n_paths)) {
+    i_idx <- order_idx[ii]
+    if (!isTRUE(keep[i_idx])) next
+    
+    vars_i <- split_paths[[i_idx]]
+    for (jj in (ii + 1):n_paths) {
+      j_idx <- order_idx[jj]
+      if (!isTRUE(keep[j_idx])) next
+      
+      vars_j <- split_paths[[j_idx]]
+      
+      # prune i if it's a strict subset of j
+      if (length(vars_i) < length(vars_j) && all(vars_i %in% vars_j)) {
+        keep[i_idx] <- FALSE
+        break
+      }
+    }
+  }
+  
+  out <- out[keep, , drop = FALSE]
+  
+  return(out)
+}
+
+
+########################
 
 # library(rpart)
-# 
+
+# rpart.sql.extract_vars_depth <- function(models_list, prune=NULL) {
+#   pruned_variables_list <- vector("list", length(models_list))
+  
+#   for (i in seq_along(models_list)) {
+#     model <- models_list[[i]]
+#     if (is.null(prune)){
+#       pruned_model <- model
+#     } else if (prune == 'cp'){
+#       pruned_model <- prune.cp(model)
+#     } else if (prune == 'serule'){
+#       pruned_model <- prune.serule(model)
+#     }
+    
+#     frame <- pruned_model$frame
+#     vars_in_tree <- frame$var
+#     node_numbers <- as.numeric(row.names(frame))
+    
+#     splitting_nodes <- vars_in_tree != "<leaf>"
+#     vars <- vars_in_tree[splitting_nodes]
+#     nodes <- node_numbers[splitting_nodes]
+    
+#     depth <- floor(log2(nodes))
+#     vars_and_depths <- data.frame(variable=vars, depth=depth)
+#     min_depths <- aggregate(depth ~ variable, data=vars_and_depths, FUN=min)
+    
+#     pruned_variables_list[[i]] <- min_depths
+#   }
+  
+#   return(pruned_variables_list)
+# }
+
 # rpart.sql <- function(formula, datafun, ...) {
 #   datafun(TRUE)
 #   models_list <- list()
 #   i <- 0
-#   
+  
 #   dots <- list(...)
-#   
+  
 #   while(TRUE) {
 #     i <- i + 1
 #     print(i)
@@ -596,17 +877,17 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 #                                        y = FALSE),
 #                                   dots))
 #   }
-#   
+  
 #   return(models_list)
 # }
-# 
+
 # rpart.sql.predict <- function(models, newdata, type = "vector") {
 #   predictions <- sapply(models, function(model) {
 #     predict(model, newdata = newdata, type = type)
 #   })
-#   
+  
 #   target_var <- all.vars(models[[1]]$terms)[1]
-#   
+  
 #   if (is.factor(newdata[[target_var]]) || is.character(newdata[[target_var]])) {
 #     avg_probs <- rowMeans(predictions)
 #     predicted_class <- ifelse(avg_probs > 0.5, levels(newdata[[target_var]])[2], levels(newdata[[target_var]])[1])
@@ -616,11 +897,11 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 #     return(as.vector(avg_prediction))
 #   }
 # }
-# 
+
 # rpart.sql.predict.all <- function(models, datafun, type = "vector"){
 #   datafun(TRUE)
 #   v <- c()
-#   
+  
 #   i <- 0
 #   while(TRUE){
 #     i <- i + 1
@@ -632,140 +913,39 @@ summary.speedglm <- function (object, correlation = FALSE, dispersion = NULL, ..
 #   }
 #   return(v)
 # }
-# 
+
 # rpart.sql.variable_importance <- function(models, data, target_var, metric = "accuracy") {
 #   original_preds <- predict_ensemble(models, data)
-#   
+  
 #   target_var <- all.vars(models[[1]]$terms)[1]
-#   
+  
 #   if (is.factor(data[[target_var]])) {
 #     original_perf <- mean(original_preds == data[[target_var]])
 #   } else {
 #     original_perf <- -mean((original_preds - data[[target_var]])^2)
 #   }
-#   
+  
 #   importance <- c()
 #   predictors <- setdiff(names(data), target_var)
 #   for (var in predictors) {
 #     permuted_data <- data
 #     permuted_data[[var]] <- sample(permuted_data[[var]])
 #     permuted_preds <- predict_ensemble(models, permuted_data)
-#     
-#     
+    
+    
 #     if (is.factor(data[[target_var]])) {
 #       permuted_perf <- mean(permuted_preds == data[[target_var]])
 #     } else {
 #       permuted_perf <- -mean((permuted_preds - data[[target_var]])^2)
 #     }
-#     
+    
 #     importance[var] <- original_perf - permuted_perf
 #   }
-#   
+  
 #   importance <- sort(importance, decreasing = TRUE)
 #   return(importance)
 # }
-# 
-# prune.serule <- function(model){
-#   cp_table <- model$cptable
-#   min_xerror_idx <- which.min(cp_table[, "xerror"])
-#   min_xerror <- cp_table[min_xerror_idx, "xerror"]
-#   se_xerror <- cp_table[min_xerror_idx, "xstd"]
-#   
-#   optimal_idx <- max(which(cp_table[, "xerror"] <= min_xerror + se_xerror))
-#   optimal_cp <- cp_table[optimal_idx, "CP"]
-#   
-#   prune(model, cp = optimal_cp)
-# }
-# 
-# prune.cp <- function(model){
-#   cp_table <- model$cptable
-#   min_xerror_idx <- which.min(cp_table[, "xerror"])
-#   optimal_cp <- cp_table[min_xerror_idx, "CP"]
-#   
-#   prune(model, cp = optimal_cp)
-# }
-# 
-# rpart.sql.extract_vars_depth <- function(models_list, prune=NULL) {
-#   pruned_variables_list <- vector("list", length(models_list))
-#   
-#   for (i in seq_along(models_list)) {
-#     model <- models_list[[i]]
-#     if (is.null(prune)){
-#       pruned_model <- model
-#     } else if (prune == 'cp'){
-#       pruned_model <- prune.cp(model)
-#     } else if (prune == 'serule'){
-#       pruned_model <- prune.serule(model)
-#     }
-#     
-#     frame <- pruned_model$frame
-#     vars_in_tree <- frame$var
-#     node_numbers <- as.numeric(row.names(frame))
-#     
-#     splitting_nodes <- vars_in_tree != "<leaf>"
-#     vars <- vars_in_tree[splitting_nodes]
-#     nodes <- node_numbers[splitting_nodes]
-#     
-#     depth <- floor(log2(nodes))
-#     vars_and_depths <- data.frame(variable=vars, depth=depth)
-#     min_depths <- aggregate(depth ~ variable, data=vars_and_depths, FUN=min)
-#     
-#     pruned_variables_list[[i]] <- min_depths
-#   }
-#   
-#   return(pruned_variables_list)
-# }
-# 
-# rpart.getimp <- function(tree_model) {
-#   v <- tree_model$frame$var
-#   v = unique(v[v != '<leaf>'])
-#   vi = tree_model$variable.importance
-#   vi = vi[attr(vi,'names') %in% v]
-#   cumsum(vi/sum(vi))
-# }
-# 
-# rpart.get_leaf_variables <- function(tree) {
-#   leaves <- as.numeric(row.names(tree$frame[tree$frame$var == "<leaf>", ]))
-#   
-#   paths <- path.rpart(tree, leaves, print.it = FALSE)
-#   leaf_vars <- c()
-#   
-#   for (i in seq_along(paths)) {
-#     path <- paths[[i]]
-#     vars <- c()
-#     
-#     for (label in path[-1]) {
-#       var <- strsplit(strsplit(label, "<")[[1]][1], ">")[[1]][1]
-#       vars <- c(vars, var)
-#     }
-#     
-#     leaf_vars <- c(leaf_vars, paste0(unique(vars), collapse = "*"))
-#   }
-#   
-#   leaf_vars <- unique(leaf_vars)
-#   
-#   terms_vars <- strsplit(leaf_vars, "\\*")
-#   keep <- rep(TRUE, length(leaf_vars))
-#   
-#   for (i in seq_along(terms_vars)) {
-#     vars_i <- terms_vars[[i]]
-#     for (j in seq_along(terms_vars)) {
-#       if (i != j) {
-#         vars_j <- terms_vars[[j]]
-#         if (all(vars_i %in% vars_j)) {
-#           keep[i] <- FALSE
-#           break
-#         }
-#       }
-#     }
-#   }
-#   
-#   leaf_vars <- leaf_vars[keep]
-#   
-#   return(leaf_vars)
-# }
 
-########################
 # build_query <- function(preds, path = character()) {
 #   # Build the subset CTE
 #   query1 <- paste0(
